@@ -19,6 +19,8 @@ const TEAM: Team = {
   loopKm: 1.41,
   refPaceSec: 360,
   raceMinutes: 1440,
+  nextRunnerId: null,
+  nextLoops: null,
   phases: [
     { id: 'jour', label: 'Jour', from: 0, to: 720, mode: 'loops', loops: 3 },
     { id: 'nuit', label: 'Nuit', from: 720, to: 1200, mode: 'time', minutes: 60 },
@@ -37,6 +39,7 @@ const leg = (over: Partial<Leg> & Pick<Leg, 'id' | 'runnerId' | 'startedAt'>): L
   teamId: 'team',
   endedAt: null,
   loops: 0,
+  plannedLoops: null,
   note: null,
   deletedAt: null,
   ...over,
@@ -214,5 +217,62 @@ describe('totaux', () => {
     const schedule = computeSchedule({ team: TEAM, runners: RUNNERS, legs, now: START + 65 * MIN });
     const totals = computeTotals(RUNNERS, legs, schedule, 1.41, 360);
     expect(totals.find((t) => t.runnerId === 'v')!.legs).toBe(1);
+  });
+});
+
+describe('consigne pour le prochain relais', () => {
+  it('impose le coureur du prochain créneau', () => {
+    const team: Team = { ...TEAM, nextRunnerId: 'q' };
+    const legs = [leg({ id: '1', runnerId: 'v', startedAt: START })];
+    const s = computeSchedule({ team, runners: RUNNERS, legs, now: START + 5 * MIN });
+    const next = s.find((e) => e.status === 'planned');
+    // Sans consigne ce serait Brunet.
+    expect(next!.runnerId).toBe('q');
+  });
+
+  it('impose le nombre de boucles du prochain créneau', () => {
+    const team: Team = { ...TEAM, nextLoops: 1 };
+    const s = computeSchedule({ team, runners: RUNNERS, legs: [], now: START });
+    expect(s[0]!.loops).toBe(1);
+    // Un seul créneau est concerné : le suivant reprend le plan de la phase.
+    expect(s[1]!.loops).toBe(3);
+  });
+
+  it('raccourcit la durée du créneau imposé', () => {
+    const team: Team = { ...TEAM, nextLoops: 1 };
+    const s = computeSchedule({ team, runners: RUNNERS, legs: [], now: START });
+    expect(s[0]!.endMin - s[0]!.startMin).toBeCloseTo((1 * 1.41 * 360) / 60, 5);
+  });
+
+  it('ignore une consigne qui désigne un coureur inactif', () => {
+    const runners = RUNNERS.map((r) => (r.id === 'q' ? { ...r, active: false } : r));
+    const team: Team = { ...TEAM, nextRunnerId: 'q' };
+    const s = computeSchedule({ team, runners, legs: [], now: START });
+    expect(s[0]!.runnerId).toBe('v');
+  });
+});
+
+describe('cible de boucles par relais', () => {
+  it('suit la consigne du relais plutôt que la phase', () => {
+    const legs = [
+      leg({ id: '1', runnerId: 'v', startedAt: START, plannedLoops: 5 }),
+    ];
+    const s = computeSchedule({ team: TEAM, runners: RUNNERS, legs, now: START + 5 * MIN });
+    expect(s[0]!.targetLoops).toBe(5);
+  });
+
+  it('retombe sur le plan de la phase sans consigne', () => {
+    const legs = [leg({ id: '1', runnerId: 'v', startedAt: START })];
+    const s = computeSchedule({ team: TEAM, runners: RUNNERS, legs, now: START + 5 * MIN });
+    expect(s[0]!.targetLoops).toBe(3);
+  });
+
+  it('allonge le relais en cours quand la cible est plus grande', () => {
+    const legs = [
+      leg({ id: '1', runnerId: 'v', startedAt: START, plannedLoops: 6 }),
+    ];
+    const s = computeSchedule({ team: TEAM, runners: RUNNERS, legs, now: START + MIN });
+    // 6 boucles à 6:00/km au lieu de 3 : le relais suivant est repoussé.
+    expect(s[1]!.startMin).toBeCloseTo((6 * 1.41 * 360) / 60, 5);
   });
 });

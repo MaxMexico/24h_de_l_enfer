@@ -29,7 +29,7 @@ groupe. Pour le changer, voir « Changer le code d'accès » plus bas.
 | Écran        | À quoi il sert |
 |--------------|----------------|
 | **Course**   | Bouton Relais plein écran, **« tu repars dans… »** pour celui qui tient le téléphone, coureur en piste, chrono, **compteur de boucles**, coureur suivant, annulation du dernier relais, total équipe. À l’arrivée, le bilan de la course. |
-| **Rotation** | Timeline complète par phase — passés, en cours, à venir. Correction des boucles au stepper, suppression, ajout d'un relais oublié. |
+| **Rotation** | Timeline complète par phase — passés, en cours, à venir. Correction des boucles et **du coureur** sur un relais passé, cible du relais en cours, suppression, ajout d'un relais oublié. |
 | **Équipe**   | Par coureur : km, relais, allure moyenne, projection, **heure de reprise**. Onglet Réglages : coureurs, ordre, ajout d’un coureur, identité du téléphone, départ, boucle, allure de référence, verrou d’écran, phases (replié), mode test. |
 
 ### Rotation par défaut
@@ -47,6 +47,28 @@ les heures de réveil fiables au fil de la nuit.
 
 Tout est paramétrable depuis l'écran Équipe → Réglages : les phases, l'heure de
 départ, la longueur de boucle et l'ordre de passage.
+
+### Quand le plan ne tient pas
+
+Il ne tiendra pas. Trois niveaux de correction, du plus ponctuel au plus durable :
+
+| Ce qu'on veut | Où |
+|---|---|
+| « Le prochain, c'est Quentin, et il ne fait que 2 boucles » | Course → **Changer le prochain relais** |
+| « Ce relais-ci en fera 4 finalement » | Course → *Ajuster ce que doit faire ce relais* |
+| « On s'est trompé, c'était Soulard qui courait » | Rotation → *Changer le coureur* |
+| « Il a bouclé 2 fois, pas 3 » | Rotation → stepper `− +` |
+| « À partir de maintenant, 2 boucles par relais » | Équipe → Réglages → phases |
+| « On change l'ordre de passage pour la suite » | Équipe → Réglages → flèches ↑↓ |
+
+La consigne du prochain relais est posée sur l'équipe : **les 4 téléphones la
+voient**, et elle est consommée dès que le relais démarre — elle ne vaut que
+pour un passage. Le bouton Relais prend la couleur du coureur imposé, ce qui
+suffit à voir d'un coup d'œil que la rotation normale est court-circuitée.
+
+Un relais porte donc deux nombres distincts : `loops`, ce qui a réellement été
+bouclé, et `planned_loops`, la cible. Sans cible explicite on suit le plan de
+la phase.
 
 ---
 
@@ -108,9 +130,11 @@ Projet Supabase dédié `Fous du Bus 24h` (`axejmhqgmsmhkgiccixw`, région
 heures de réveil sont **dérivés côté client**, rien n'est précalculé en base.
 
 ```
-teams   — nom, access_code, heure de départ, longueur de boucle, phases (jsonb)
+teams   — nom, access_code, départ, longueur de boucle, phases (jsonb),
+          consigne pour le prochain relais (next_runner_id, next_loops)
 runners — nom, ordre de passage, couleur, actif
-legs    — relais : coureur, début, fin (null = en cours), boucles, note
+legs    — relais : coureur, début, fin (null = en cours),
+          loops (réellement bouclé), planned_loops (cible), note
 ```
 
 Les migrations sont dans `supabase/migrations/`, dans l'ordre où elles ont été
@@ -296,10 +320,10 @@ les lignes une à une.
 ### Tests d'acceptation
 
 ```bash
-npm test                       # 42 tests : planning, allures, file d'envoi
+npm test                       # 49 tests : planning, allures, file d'envoi, consignes
 ```
 
-`scripts/acceptance.sql` rejoue les 23 tests de la couche d'accès directement en
+`scripts/acceptance.sql` rejoue les 27 tests de la couche d'accès directement en
 base (RLS, cloisonnement entre équipes, concurrence, idempotence, annulation) —
 à coller dans le SQL editor Supabase. Le script refuse de tourner si la course
 contient déjà des relais, et nettoie ce qu'il a créé.
@@ -311,6 +335,7 @@ Trois scripts pilotent l'app dans un vrai navigateur avec Supabase bouchonné :
 | `smoke.mjs` | Rendu des trois écrans. `FINISHED=1` affiche le bilan de fin. |
 | `resilience.mjs` | Réactivité du bouton, bandeau de relance, non-duplication. |
 | `persistence.mjs` | Identité du téléphone, compteur de boucles, et **survie d'un relais à un rechargement** avec le réseau toujours en échec. |
+| `override.mjs` | Consigne pour le prochain relais : coureur et boucles imposés, appliqués puis effacés, et correction du coureur d'un relais passé. |
 
 ```bash
 npx playwright install chromium     # une seule fois

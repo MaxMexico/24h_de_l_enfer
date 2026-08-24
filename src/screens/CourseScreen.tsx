@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RaceRing } from '../components/RaceRing';
+import { NextRelayPanel } from '../components/NextRelayPanel';
 import { RaceSummary } from '../components/RaceSummary';
 import {
   activeRunners,
@@ -52,8 +53,10 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
   const over = finished && started && open === null;
 
   // Boucles a inscrire sur le relais qu'on ferme, si personne ne les a comptees.
+  // La consigne posee sur le relais prime sur le plan de la phase.
   const closingLoops = useMemo(() => {
     if (!open) return null;
+    if (open.plannedLoops !== null) return open.plannedLoops;
     const phase = phaseAt(team.phases, Math.max(0, (open.startedAt - team.raceStart) / 60000));
     if (!phase) return null;
     return plannedLoops(phase, team.loopKm, paceOf(open.runnerId, legs, team.loopKm, team.refPaceSec));
@@ -175,28 +178,17 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
               target={closingLoops}
               loopKm={team.loopKm}
               onChange={(n) => race.setLoops(open.id, n)}
+              onTargetChange={(n) => race.setPlannedLoops(open.id, n)}
             />
 
-            {nextEntry && (
-              <div className="mt-3.5 flex items-center gap-2.5 border-t border-line pt-3.5">
-                <span
-                  className="h-2.5 w-2.5 flex-none rounded-full"
-                  style={{ background: runnerById(nextEntry.runnerId)?.color }}
-                  aria-hidden
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">
-                    Ensuite · {runnerById(nextEntry.runnerId)?.name ?? '—'}
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted">
-                    {nextEntry.loops} boucles · {fmtKm(nextEntry.loops * team.loopKm)} km
-                  </div>
-                </div>
-                <div className="mono flex-none text-sm text-muted">
-                  {fmtClock(nextEntry.startedAt)}
-                </div>
-              </div>
-            )}
+            <NextRelayPanel
+              race={race}
+              entry={nextEntry}
+              roster={roster}
+              loopKm={team.loopKm}
+              forcedRunnerId={team.nextRunnerId}
+              forcedLoops={team.nextLoops}
+            />
           </>
         ) : (
           <>
@@ -279,13 +271,18 @@ function LoopCounter({
   target,
   loopKm,
   onChange,
+  onTargetChange,
 }: {
   loops: number;
   target: number | null;
   loopKm: number;
   onChange: (n: number) => void;
+  onTargetChange: (n: number) => void;
 }) {
+  const [editTarget, setEditTarget] = useState(false);
+
   return (
+    <>
     <div className="mt-3.5 flex items-center gap-3 rounded-xl border border-line bg-raised p-2.5">
       <button
         type="button"
@@ -314,6 +311,40 @@ function LoopCounter({
         +
       </button>
     </div>
+
+    <button
+      type="button"
+      className="mt-1.5 w-full text-center text-[11px] text-muted underline"
+      onClick={() => setEditTarget((v) => !v)}
+      aria-expanded={editTarget}
+    >
+      {editTarget ? 'Fermer' : 'Ajuster ce que doit faire ce relais'}
+    </button>
+
+    {editTarget && target !== null && (
+      <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-line p-2">
+        <button
+          type="button"
+          aria-label="Réduire la cible de ce relais"
+          onClick={() => onTargetChange(Math.max(1, target - 1))}
+          className="h-10 w-10 flex-none rounded-lg border border-line"
+        >
+          −
+        </button>
+        <div className="flex-1 text-center text-[12px] text-muted">
+          cible <span className="mono text-ink">{target}</span> boucles
+        </div>
+        <button
+          type="button"
+          aria-label="Augmenter la cible de ce relais"
+          onClick={() => onTargetChange(target + 1)}
+          className="h-10 w-10 flex-none rounded-lg border border-line"
+        >
+          +
+        </button>
+      </div>
+    )}
+    </>
   );
 }
 

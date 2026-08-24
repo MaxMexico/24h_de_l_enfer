@@ -12,6 +12,8 @@ const TEAM: Team = {
   loopKm: 1.41,
   refPaceSec: 360,
   raceMinutes: 1440,
+  nextRunnerId: null,
+  nextLoops: null,
   phases: [{ id: 'jour', label: 'Jour', from: 0, to: 1440, mode: 'loops', loops: 3 }],
 };
 

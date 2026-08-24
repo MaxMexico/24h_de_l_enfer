@@ -12,9 +12,12 @@ grant insert on t_res to anon;
 do $$
 declare
   v_team uuid; v_r1 uuid; n int; nm text; op uuid;
+  v_q uuid;
   a uuid := gen_random_uuid();
   b uuid := gen_random_uuid();
   c uuid := gen_random_uuid();
+  d uuid := gen_random_uuid();
+  e uuid := gen_random_uuid();
 begin
   select id into v_team from public.teams where access_code = 'fousdubus-a7f3';
   select id into v_r1 from public.runners where team_id = v_team order by position limit 1;
@@ -155,10 +158,38 @@ begin
   select count(*) into n from public.legs where team_id = v_team and deleted_at is null;
   insert into t_res values ('R14. annulation simultanee', n::text, '1', n = 1);
 
+  -- ---------------------------------------------------- consigne
+  -- « Le prochain, c'est Quentin, et il ne fait que 2 boucles. »
+  reset role;
+  select id into v_q from public.runners where team_id = v_team and name = 'Quentin';
+  set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+
+  update public.teams set next_runner_id = v_q, next_loops = 2 where id = v_team;
+  perform public.record_relay(d, a, now() + interval '60 min', null, 3);
+
+  select r.name into nm from public.legs l
+    join public.runners r on r.id = l.runner_id where l.id = d;
+  insert into t_res values ('C1. consigne : coureur impose', nm, 'Quentin', nm = 'Quentin');
+  select planned_loops::text into nm from public.legs where id = d;
+  insert into t_res values ('C2. consigne : boucles imposees', coalesce(nm, 'null'), '2', nm = '2');
+
+  reset role;
+  select coalesce(next_runner_id::text, 'null') into nm from public.teams where id = v_team;
+  insert into t_res values ('C3. consigne consommee',
+                            case when nm = 'null' then 'effacee' else 'restante' end,
+                            'effacee', nm = 'null');
+  set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+
+  perform public.record_relay(e, d, now() + interval '80 min', null, 2);
+  select r.name into nm from public.legs l
+    join public.runners r on r.id = l.runner_id where l.id = e;
+  insert into t_res values ('C4. rotation normale reprise', nm, 'Victor', nm = 'Victor');
+
   reset role;
 
   -- Nettoyage : on ne supprime que les relais crees par ce script.
-  delete from public.legs where team_id = v_team and id in (a, b, c);
+  update public.teams set next_runner_id = null, next_loops = null where id = v_team;
+  delete from public.legs where team_id = v_team and id in (a, b, c, d, e);
 end $$;
 
 select

@@ -23,6 +23,9 @@ export interface Team {
   refPaceSec: number;
   raceMinutes: number;
   phases: Phase[];
+  /** Consigne pour le prochain relais, posee par n'importe quel telephone. */
+  nextRunnerId: string | null;
+  nextLoops: number | null;
 }
 
 export interface Runner {
@@ -39,7 +42,10 @@ export interface Leg {
   runnerId: string;
   startedAt: number;
   endedAt: number | null;
+  /** Boucles reellement bouclees. */
   loops: number;
+  /** Boucles prevues pour ce relais. Null = on suit le plan de la phase. */
+  plannedLoops: number | null;
   note: string | null;
   deletedAt: number | null;
 }
@@ -56,6 +62,8 @@ export interface ScheduleEntry {
   startedAt: number;
   endedAt: number | null;
   loops: number;
+  /** Cible de boucles : consigne du relais, sinon plan de la phase. */
+  targetLoops: number;
   status: EntryStatus;
   /** Allure reellement tenue, en s/km. Null tant que le relais n'est pas fini. */
   actualPaceSec: number | null;

@@ -39,6 +39,12 @@ export interface UseRace {
   saveTeam: (patch: Partial<Pick<Team, 'raceStart' | 'loopKm' | 'refPaceSec' | 'phases'>>) => void;
   saveRunners: (runners: Runner[]) => void;
   addRunner: (input: { name: string; color: string }) => void;
+  /** Change le coureur d'un relais deja enregistre. */
+  setLegRunner: (legId: string, runnerId: string) => void;
+  /** Cible de boucles d'un relais. Null = on suit le plan de la phase. */
+  setPlannedLoops: (legId: string, loops: number | null) => void;
+  /** Consigne pour le prochain relais, partagee par les 4 telephones. */
+  setNextRelay: (runnerId: string | null, loops: number | null) => void;
   retry: () => void;
   refresh: () => void;
 }
@@ -194,8 +200,29 @@ export const useRace = (code: string): UseRace => {
           attempts.current.delete(op.key);
           commitQueue(queue.current.slice(1));
           setFailed(false);
-          if (fresh) setServer((prev) => (prev ? { ...prev, ...fresh } : prev));
-          else refresh();
+
+          if (fresh) {
+            // record_relay consomme la consigne d'equipe mais ne renvoie que
+            // les relais : sans ca, l'ecran continuerait d'afficher
+            // « imposé » sur un prochain relais qui ne l'est plus.
+            const consumesOverride = op.kind === 'relay';
+            setServer((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    ...fresh,
+                    team: consumesOverride
+                      ? { ...prev.team, nextRunnerId: null, nextLoops: null }
+                      : prev.team,
+                  }
+                : prev,
+            );
+            // La consigne n'est effacee en base que si le relais a bien ete
+            // ouvert : on relit pour trancher.
+            if (consumesOverride) refresh();
+          } else {
+            refresh();
+          }
         } catch {
           const tried = (attempts.current.get(op.key) ?? 0) + 1;
           attempts.current.set(op.key, tried);
@@ -329,6 +356,37 @@ export const useRace = (code: string): UseRace => {
     [data, enqueue],
   );
 
+  const setLegRunner = useCallback(
+    (legId: string, runnerId: string) => {
+      enqueue({ kind: 'setLegRunner', key: uuid(), legId, runnerId });
+    },
+    [enqueue],
+  );
+
+  const setPlannedLoops = useCallback(
+    (legId: string, loops: number | null) => {
+      enqueue({
+        kind: 'setPlannedLoops',
+        key: uuid(),
+        legId,
+        loops: loops === null ? null : Math.max(1, loops),
+      });
+    },
+    [enqueue],
+  );
+
+  const setNextRelay = useCallback(
+    (runnerId: string | null, loops: number | null) => {
+      enqueue({
+        kind: 'setNextRelay',
+        key: uuid(),
+        runnerId,
+        loops: loops === null ? null : Math.max(1, loops),
+      });
+    },
+    [enqueue],
+  );
+
   const sync: SyncState = failed ? 'error' : pending.length > 0 ? 'pending' : 'idle';
 
   return {
@@ -346,6 +404,9 @@ export const useRace = (code: string): UseRace => {
     saveTeam,
     saveRunners,
     addRunner,
+    setLegRunner,
+    setPlannedLoops,
+    setNextRelay,
     retry,
     refresh,
   };
@@ -354,6 +415,9 @@ export const useRace = (code: string): UseRace => {
 /** Coureur qui prendra le relais apres celui en piste. */
 export const incomingRunner = (data: RaceData): Runner | null => {
   const roster = activeRunners(data.runners);
+  const forced = roster.find((r) => r.id === data.team.nextRunnerId);
+  if (forced) return forced;
+
   const open = openLegOf(data.legs);
   if (!open) return roster[0] ?? null;
   const idx = roster.findIndex((r) => r.id === open.runnerId);

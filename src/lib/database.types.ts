@@ -27,6 +27,7 @@ export type Database = {
           id: string
           loops: number
           note: string | null
+          planned_loops: number | null
           runner_id: string
           started_at: string
           team_id: string
@@ -39,6 +40,7 @@ export type Database = {
           id: string
           loops?: number
           note?: string | null
+          planned_loops?: number | null
           runner_id: string
           started_at: string
           team_id: string
@@ -51,6 +53,7 @@ export type Database = {
           id?: string
           loops?: number
           note?: string | null
+          planned_loops?: number | null
           runner_id?: string
           started_at?: string
           team_id?: string
@@ -121,6 +124,8 @@ export type Database = {
           id: string
           loop_km: number
           name: string
+          next_loops: number | null
+          next_runner_id: string | null
           phases: Json
           race_minutes: number
           race_start: string
@@ -145,6 +150,8 @@ export type Database = {
           id?: string
           loop_km?: number
           name?: string
+          next_loops?: number | null
+          next_runner_id?: string | null
           phases?: Json
           race_minutes?: number
           race_start?: string
@@ -173,6 +180,7 @@ export type Database = {
           id: string
           loops: number
           note: string | null
+          planned_loops: number | null
           runner_id: string
           started_at: string
           team_id: string
@@ -196,6 +204,7 @@ export type Database = {
           id: string
           loops: number
           note: string | null
+          planned_loops: number | null
           runner_id: string
           started_at: string
           team_id: string

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { activeRunners, computeSchedule } from '../domain/schedule';
-import type { Phase, ScheduleEntry } from '../domain/types';
+import type { Phase, Runner, ScheduleEntry } from '../domain/types';
 import { fmtClock, fmtKm, fmtPace } from '../lib/time';
 import type { UseRace } from '../state/useRace';
 
@@ -87,67 +87,155 @@ function Section({ title, rows, race, team, runners }: SectionProps) {
         <span className="h-px flex-1 bg-line" aria-hidden />
       </h2>
       <div className="card px-4 py-1">
-        {rows.map((e) => {
-          const runner = runners.find((r) => r.id === e.runnerId);
-          const editable = e.status === 'done';
-          return (
-            <div
-              key={e.id}
-              className={`flex items-center gap-3 border-b border-line py-3 last:border-b-0
-                          ${e.status === 'live' ? '-ml-2.5 pl-2.5 shadow-[inset_2px_0_0_#E6EAF0]' : ''}
-                          ${e.status === 'planned' ? 'opacity-40' : ''}`}
-            >
-              <div className="mono w-[46px] flex-none text-sm text-muted">
-                {fmtClock(e.startedAt)}
-              </div>
-              <span
-                className="h-2.5 w-2.5 flex-none rounded-full"
-                style={{ background: runner?.color ?? '#4A5460' }}
-                aria-hidden
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-[15px] font-medium">{runner?.name ?? 'Coureur retiré'}</div>
-                <div className="mt-0.5 text-[11px] text-muted">
-                  {fmtKm(e.loops * team.loopKm)} km
-                  {e.actualPaceSec ? ` · ${fmtPace(e.actualPaceSec)}/km` : ''}
-                  {e.status === 'live' ? ' · en cours' : ''}
-                </div>
-              </div>
-
-              {editable && (
-                <div className="flex flex-none items-center gap-1.5">
-                  <button
-                    type="button"
-                    aria-label={`Retirer une boucle à ${runner?.name ?? 'ce relais'}`}
-                    onClick={() => race.setLoops(e.id, Math.max(0, e.loops - 1))}
-                    className="h-9 w-9 rounded-lg border border-line bg-raised text-base active:bg-line"
-                  >
-                    −
-                  </button>
-                  <span className="mono w-5 text-center text-sm">{e.loops}</span>
-                  <button
-                    type="button"
-                    aria-label={`Ajouter une boucle à ${runner?.name ?? 'ce relais'}`}
-                    onClick={() => race.setLoops(e.id, e.loops + 1)}
-                    className="h-9 w-9 rounded-lg border border-line bg-raised text-base active:bg-line"
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Supprimer le relais de ${runner?.name ?? 'ce coureur'}`}
-                    onClick={() => race.removeLeg(e.id)}
-                    className="h-9 w-9 rounded-lg border border-line text-muted active:bg-line"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {rows.map((e) => (
+          <LegRow key={e.id} entry={e} race={race} team={team} runners={runners} />
+        ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * Une ligne de la timeline. Un relais deja couru reste modifiable — le
+ * coureur comme les boucles : a 4 h du matin on se trompe de bouton, et
+ * l'ordre prevu la veille ne survit pas forcement a la nuit.
+ */
+function LegRow({
+  entry,
+  race,
+  team,
+  runners,
+}: {
+  entry: ScheduleEntry;
+  race: UseRace;
+  team: NonNullable<UseRace['data']>['team'];
+  runners: Runner[];
+}) {
+  const [editing, setEditing] = useState(false);
+  const runner = runners.find((r) => r.id === entry.runnerId);
+  const done = entry.status === 'done';
+  const live = entry.status === 'live';
+  const editable = done || live;
+
+  return (
+    <div
+      className={`border-b border-line py-3 last:border-b-0
+                  ${live ? '-ml-2.5 pl-2.5 shadow-[inset_2px_0_0_#E6EAF0]' : ''}
+                  ${entry.status === 'planned' ? 'opacity-40' : ''}`}
+    >
+      <div className="flex items-center gap-3">
+        <div className="mono w-[46px] flex-none text-sm text-muted">
+          {fmtClock(entry.startedAt)}
+        </div>
+        <span
+          className="h-2.5 w-2.5 flex-none rounded-full"
+          style={{ background: runner?.color ?? '#4A5460' }}
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-medium">{runner?.name ?? 'Coureur retiré'}</div>
+          <div className="mt-0.5 text-[11px] text-muted">
+            {fmtKm(entry.loops * team.loopKm)} km
+            {entry.actualPaceSec ? ` · ${fmtPace(entry.actualPaceSec)}/km` : ''}
+            {live ? ` · en cours, cible ${entry.targetLoops}` : ''}
+          </div>
+        </div>
+
+        {done && (
+          <div className="flex flex-none items-center gap-1.5">
+            <button
+              type="button"
+              aria-label={`Retirer une boucle à ${runner?.name ?? 'ce relais'}`}
+              onClick={() => race.setLoops(entry.id, Math.max(0, entry.loops - 1))}
+              className="h-9 w-9 rounded-lg border border-line bg-raised text-base active:bg-line"
+            >
+              −
+            </button>
+            <span className="mono w-5 text-center text-sm">{entry.loops}</span>
+            <button
+              type="button"
+              aria-label={`Ajouter une boucle à ${runner?.name ?? 'ce relais'}`}
+              onClick={() => race.setLoops(entry.id, entry.loops + 1)}
+              className="h-9 w-9 rounded-lg border border-line bg-raised text-base active:bg-line"
+            >
+              +
+            </button>
+          </div>
+        )}
+      </div>
+
+      {editable && (
+        <button
+          type="button"
+          className="mt-1.5 pl-[58px] text-[11px] text-muted underline"
+          onClick={() => setEditing((v) => !v)}
+          aria-expanded={editing}
+        >
+          {editing ? 'Fermer' : live ? 'Changer le coureur ou la cible' : 'Changer le coureur'}
+        </button>
+      )}
+
+      {editing && (
+        <div className="ml-[58px] mt-2 rounded-xl border border-line bg-raised p-3">
+          <div className="stat-k">Coureur</div>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            {activeRunners(runners).map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                aria-pressed={r.id === entry.runnerId}
+                onClick={() => race.setLegRunner(entry.id, r.id)}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm ${
+                  r.id === entry.runnerId ? 'border-ink' : 'border-line'
+                }`}
+              >
+                <span
+                  className="h-2.5 w-2.5 flex-none rounded-full"
+                  style={{ background: r.color }}
+                  aria-hidden
+                />
+                {r.name}
+              </button>
+            ))}
+          </div>
+
+          {live && (
+            <>
+              <div className="stat-k mt-3">Cible de boucles</div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Réduire la cible"
+                  onClick={() => race.setPlannedLoops(entry.id, Math.max(1, entry.targetLoops - 1))}
+                  className="h-10 w-10 flex-none rounded-lg border border-line"
+                >
+                  −
+                </button>
+                <div className="mono flex-1 text-center">{entry.targetLoops}</div>
+                <button
+                  type="button"
+                  aria-label="Augmenter la cible"
+                  onClick={() => race.setPlannedLoops(entry.id, entry.targetLoops + 1)}
+                  className="h-10 w-10 flex-none rounded-lg border border-line"
+                >
+                  +
+                </button>
+              </div>
+            </>
+          )}
+
+          {done && (
+            <button
+              type="button"
+              className="ghost mt-3"
+              onClick={() => race.removeLeg(entry.id)}
+            >
+              Supprimer ce relais
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

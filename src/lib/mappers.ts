@@ -7,7 +7,7 @@ type LegRow = Database['public']['Tables']['legs']['Row'];
 
 /** Colonnes lisibles de `teams` : access_code n'est jamais expose. */
 export const TEAM_COLUMNS =
-  'id,name,race_start,loop_km,ref_pace_sec,phases,race_minutes' as const;
+  'id,name,race_start,loop_km,ref_pace_sec,phases,race_minutes,next_runner_id,next_loops' as const;
 
 const ms = (iso: string): number => new Date(iso).getTime();
 const msOrNull = (iso: string | null): number | null => (iso === null ? null : ms(iso));
@@ -34,7 +34,7 @@ export const parsePhases = (raw: Json): Phase[] => {
   return phases.sort((a, b) => a.from - b.from);
 };
 
-export const toTeam = (row: Pick<TeamRow, 'id' | 'name' | 'race_start' | 'loop_km' | 'ref_pace_sec' | 'phases' | 'race_minutes'>): Team => ({
+export const toTeam = (row: Pick<TeamRow, 'id' | 'name' | 'race_start' | 'loop_km' | 'ref_pace_sec' | 'phases' | 'race_minutes' | 'next_runner_id' | 'next_loops'>): Team => ({
   id: row.id,
   name: row.name,
   raceStart: ms(row.race_start),
@@ -42,6 +42,8 @@ export const toTeam = (row: Pick<TeamRow, 'id' | 'name' | 'race_start' | 'loop_k
   refPaceSec: row.ref_pace_sec,
   raceMinutes: row.race_minutes,
   phases: parsePhases(row.phases),
+  nextRunnerId: row.next_runner_id,
+  nextLoops: row.next_loops,
 });
 
 export const toRunner = (row: RunnerRow): Runner => ({
@@ -59,6 +61,7 @@ export const toLeg = (row: LegRow): Leg => ({
   startedAt: ms(row.started_at),
   endedAt: msOrNull(row.ended_at),
   loops: row.loops,
+  plannedLoops: row.planned_loops,
   note: row.note,
   deletedAt: msOrNull(row.deleted_at),
 });

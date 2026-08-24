@@ -19,7 +19,7 @@ const R = {
 const team = [{
   id: TEAM_ID, name: 'Les Fous du Bus',
   race_start: START.toISOString(), loop_km: 1.41, ref_pace_sec: 360,
-  race_minutes: 1440,
+  race_minutes: 1440, next_runner_id: null, next_loops: null,
   phases: [
     { id: 'jour', label: 'Jour', from: 0, to: 720, mode: 'loops', loops: 3 },
     { id: 'nuit', label: 'Nuit', from: 720, to: 1200, mode: 'time', minutes: 60 },
@@ -46,7 +46,7 @@ for (let i = 0; i < (FINISHED ? 60 : 8); i += 1) {
     team_id: TEAM_ID, runner_id: order[i % 4],
     started_at: new Date(t).toISOString(),
     ended_at: new Date(t + dur).toISOString(),
-    loops: 3, note: null, deleted_at: null,
+    loops: 3, planned_loops: null, note: null, deleted_at: null,
     created_at: new Date(t).toISOString(), updated_at: new Date(t).toISOString(),
   });
   t += dur;
@@ -55,7 +55,7 @@ if (!FINISHED) legs.push({
   id: '33333333-3333-4333-8333-000000000008',
   team_id: TEAM_ID, runner_id: order[8 % 4],
   started_at: new Date(t).toISOString(), ended_at: null,
-  loops: 0, note: null, deleted_at: null,
+  loops: 0, planned_loops: null, note: null, deleted_at: null,
   created_at: new Date(t).toISOString(), updated_at: new Date(t).toISOString(),
 });
 

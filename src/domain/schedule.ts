@@ -128,6 +128,9 @@ export const computeSchedule = ({
       startedAt: l.startedAt,
       endedAt: l.endedAt,
       loops: l.loops,
+      targetLoops:
+        l.plannedLoops ??
+        (phase ? plannedLoops(phase, loopKm, pace(l.runnerId)) : 0),
       status: isLive ? 'live' : 'done',
       actualPaceSec: !isLive && km > 0 && durSec > 0 ? durSec / km : null,
       phaseId: phase?.id ?? '',
@@ -146,7 +149,13 @@ export const computeSchedule = ({
     // Un relais est en cours : on estime son heure de fin, sans jamais
     // afficher une heure deja passee.
     const phase = phaseAt(phases, Math.max(0, toMin(last.startedAt)));
-    const dur = phase ? plannedDurationMin(phase, loopKm, pace(last.runnerId)) : 0;
+    const target = out[out.length - 1]?.targetLoops ?? 0;
+    const dur =
+      phase === null
+        ? 0
+        : last.plannedLoops !== null && phase.mode === 'loops'
+          ? (target * loopKm * pace(last.runnerId)) / 60
+          : plannedDurationMin(phase, loopKm, pace(last.runnerId));
     const projectedEnd = toMin(last.startedAt) + dur;
     cursorMin = Math.max(projectedEnd, toMin(now));
 
@@ -158,13 +167,23 @@ export const computeSchedule = ({
     nextRunner = nextRunnerAfter(roster, last.runnerId);
   }
 
+  // Le premier creneau a venir peut etre impose : « le prochain, c'est
+  // Quentin, et il ne fait que 2 boucles ».
+  const forced = roster.find((r) => r.id === team.nextRunnerId) ?? null;
+  if (forced !== null) nextRunner = forced;
+
   let guard = 0;
   while (cursorMin < raceMinutes && nextRunner !== null && guard < MAX_PROJECTED) {
     const phase = phaseAt(phases, cursorMin);
     if (phase === null) break;
 
     const runnerPace = pace(nextRunner.id);
-    const dur = plannedDurationMin(phase, loopKm, runnerPace);
+    const forcedLoops = guard === 0 ? team.nextLoops : null;
+    const loops = forcedLoops ?? plannedLoops(phase, loopKm, runnerPace);
+    const dur =
+      forcedLoops !== null && phase.mode === 'loops'
+        ? (forcedLoops * loopKm * runnerPace) / 60
+        : plannedDurationMin(phase, loopKm, runnerPace);
     const end = Math.min(cursorMin + dur, raceMinutes);
 
     out.push({
@@ -174,7 +193,8 @@ export const computeSchedule = ({
       endMin: end,
       startedAt: raceStart + cursorMin * 60000,
       endedAt: null,
-      loops: plannedLoops(phase, loopKm, runnerPace),
+      loops,
+      targetLoops: loops,
       status: 'planned',
       actualPaceSec: null,
       phaseId: phase.id,

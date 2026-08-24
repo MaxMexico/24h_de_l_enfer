@@ -11,6 +11,7 @@ const R = ['22222222-2222-4222-8222-222222222221', '22222222-2222-4222-8222-2222
 const team = {
   id: TEAM_ID, name: 'Les Fous du Bus', race_start: START.toISOString(),
   loop_km: 1.41, ref_pace_sec: 360, race_minutes: 1440,
+  next_runner_id: null, next_loops: null,
   phases: [{ id: 'jour', label: 'Jour', from: 0, to: 720, mode: 'loops', loops: 3 },
            { id: 'nuit', label: 'Nuit', from: 720, to: 1200, mode: 'time', minutes: 60 },
            { id: 'finale', label: 'Finale', from: 1200, to: 1440, mode: 'loops', loops: 2 }],
@@ -23,7 +24,7 @@ const runners = ['Victor', 'Brunet', 'Soulard', 'Quentin'].map((name, i) => ({
 // Victor est en piste depuis le depart : le garde-fou des 15 s ne gene pas.
 const legs = [{
   id: '33333333-3333-4333-8333-000000000000', team_id: TEAM_ID, runner_id: R[0],
-  started_at: START.toISOString(), ended_at: null, loops: 0, note: null, deleted_at: null,
+  started_at: START.toISOString(), ended_at: null, loops: 0, planned_loops: null, note: null, deleted_at: null,
   created_at: START.toISOString(), updated_at: START.toISOString(),
 }];
 
@@ -48,7 +49,7 @@ await page.route('**/rest/v1/**', async (route) => {
     return ok([
       { ...legs[0], ended_at: p.p_at, loops: p.p_closing_loops ?? 3 },
       { id: p.p_leg_id, team_id: TEAM_ID, runner_id: R[1], started_at: p.p_at,
-        ended_at: null, loops: 0, note: null, deleted_at: null,
+        ended_at: null, loops: 0, planned_loops: null, note: null, deleted_at: null,
         created_at: p.p_at, updated_at: p.p_at },
     ]);
   }

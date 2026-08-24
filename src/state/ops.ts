@@ -48,7 +48,15 @@ export type Op =
       patch: Partial<Pick<Team, 'raceStart' | 'loopKm' | 'refPaceSec' | 'phases'>>;
     }
   | { kind: 'saveRunners'; key: string; runners: Runner[] }
-  | { kind: 'addRunner'; key: string; runner: Runner };
+  | { kind: 'addRunner'; key: string; runner: Runner }
+  | { kind: 'setLegRunner'; key: string; legId: string; runnerId: string }
+  | { kind: 'setPlannedLoops'; key: string; legId: string; loops: number | null }
+  | {
+      kind: 'setNextRelay';
+      key: string;
+      runnerId: string | null;
+      loops: number | null;
+    };
 
 export const openLegOf = (legs: Leg[]): Leg | null =>
   liveLegs(legs).find((l) => l.endedAt === null) ?? null;
@@ -67,13 +75,16 @@ const applyRelay = (
 
   const open = openLegOf(data.legs);
   const roster = activeRunners(data.runners);
+  // Consigne posee pour ce passage ; elle ne vaut qu'une fois.
+  const forced = roster.find((r) => r.id === data.team.nextRunnerId) ?? null;
+  const forcedLoops = data.team.nextLoops;
   let legs = data.legs;
   let at = op.at;
   let runnerId: string | null;
 
   if (op.closingLegId === null) {
     if (open !== null) return data;
-    runnerId = roster[0]?.id ?? null;
+    runnerId = forced?.id ?? roster[0]?.id ?? null;
   } else {
     // Un autre telephone a deja enregistre ce passage : on ne double pas.
     if (open === null || open.id !== op.closingLegId) return data;
@@ -83,13 +94,14 @@ const applyRelay = (
         ? { ...l, endedAt: at, loops: op.closingLoops ?? l.loops }
         : l,
     );
-    runnerId = nextRunnerAfter(roster, open.runnerId)?.id ?? null;
+    runnerId = forced?.id ?? nextRunnerAfter(roster, open.runnerId)?.id ?? null;
   }
 
   if (runnerId === null) return data;
 
   return {
     ...data,
+    team: { ...data.team, nextRunnerId: null, nextLoops: null },
     legs: [
       ...legs,
       {
@@ -99,6 +111,7 @@ const applyRelay = (
         startedAt: at,
         endedAt: null,
         loops: 0,
+        plannedLoops: forcedLoops,
         note: null,
         deletedAt: null,
       },
@@ -159,6 +172,7 @@ export const applyOp = (data: RaceData, op: Op): RaceData => {
             startedAt: op.startedAt,
             endedAt: op.endedAt,
             loops: op.loops,
+            plannedLoops: null,
             note: null,
             deletedAt: null,
           },
@@ -171,6 +185,25 @@ export const applyOp = (data: RaceData, op: Op): RaceData => {
     case 'addRunner':
       if (data.runners.some((r) => r.id === op.runner.id)) return data;
       return { ...data, runners: [...data.runners, op.runner] };
+    case 'setLegRunner':
+      return {
+        ...data,
+        legs: data.legs.map((l) =>
+          l.id === op.legId ? { ...l, runnerId: op.runnerId } : l,
+        ),
+      };
+    case 'setPlannedLoops':
+      return {
+        ...data,
+        legs: data.legs.map((l) =>
+          l.id === op.legId ? { ...l, plannedLoops: op.loops } : l,
+        ),
+      };
+    case 'setNextRelay':
+      return {
+        ...data,
+        team: { ...data.team, nextRunnerId: op.runnerId, nextLoops: op.loops },
+      };
     default:
       return data;
   }
@@ -257,6 +290,30 @@ export const runOp = async (
           .eq('id', r.id);
         if (error) throw error;
       }
+      return null;
+    }
+    case 'setLegRunner': {
+      const { error } = await client
+        .from('legs')
+        .update({ runner_id: op.runnerId })
+        .eq('id', op.legId);
+      if (error) throw error;
+      return null;
+    }
+    case 'setPlannedLoops': {
+      const { error } = await client
+        .from('legs')
+        .update({ planned_loops: op.loops })
+        .eq('id', op.legId);
+      if (error) throw error;
+      return null;
+    }
+    case 'setNextRelay': {
+      const { error } = await client
+        .from('teams')
+        .update({ next_runner_id: op.runnerId, next_loops: op.loops })
+        .eq('id', teamId);
+      if (error) throw error;
       return null;
     }
     case 'addRunner': {
