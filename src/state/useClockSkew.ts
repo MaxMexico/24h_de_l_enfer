@@ -26,12 +26,17 @@ export const useClockSkew = (): number => {
     const measure = async () => {
       try {
         const before = Date.now();
+        // PostgREST veut les deux en-tetes : avec `apikey` seul il repond
+        // 401, et le navigateur refuse alors de nous laisser lire l'en-tete
+        // `Date` — la mesure echouait donc en silence.
         const res = await fetch(`${url}/rest/v1/`, {
           method: 'HEAD',
-          headers: { apikey: key },
+          headers: { apikey: key, Authorization: `Bearer ${key}` },
           cache: 'no-store',
         });
         const after = Date.now();
+        if (!res.ok) return;
+
         const header = res.headers.get('date');
         if (!header) return;
 
