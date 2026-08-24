@@ -44,8 +44,10 @@ export default defineConfig({
     }),
   ],
   test: {
-    // jsdom fournit localStorage, dont depend la file d'envoi persistee.
-    environment: 'jsdom',
+    // Le domaine et la file d'envoi sont de la logique pure : pas besoin
+    // d'un DOM complet, et donc pas de jsdom a tenir a jour.
+    environment: 'node',
     include: ['src/**/*.test.ts'],
+    setupFiles: ['src/test-setup.ts'],
   },
 });

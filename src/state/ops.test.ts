@@ -196,7 +196,7 @@ describe('file d envoi persistee', () => {
   });
 
   it('ignore un contenu corrompu', () => {
-    window.localStorage.setItem('fdb24:outbox:casse', '{pas du json');
+    globalThis.localStorage.setItem('fdb24:outbox:casse', '{pas du json');
     expect(loadOutbox('casse')).toEqual([]);
   });
 });

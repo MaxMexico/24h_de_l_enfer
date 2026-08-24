@@ -281,6 +281,19 @@ export const runOp = async (
 
 const OUTBOX_PREFIX = 'fdb24:outbox:';
 
+/**
+ * Acces au stockage local. Passe par `globalThis` plutot que `window` pour
+ * rester testable hors navigateur, et tolere l'absence totale de stockage
+ * (navigation privee, quota plein).
+ */
+const storage = (): Storage | null => {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const isOp = (value: unknown): value is Op => {
   if (typeof value !== 'object' || value === null) return false;
   const o = value as { kind?: unknown; key?: unknown };
@@ -289,7 +302,7 @@ const isOp = (value: unknown): value is Op => {
 
 export const loadOutbox = (code: string): Op[] => {
   try {
-    const raw = window.localStorage.getItem(OUTBOX_PREFIX + code);
+    const raw = storage()?.getItem(OUTBOX_PREFIX + code);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter(isOp) : [];
@@ -300,8 +313,10 @@ export const loadOutbox = (code: string): Op[] => {
 
 export const saveOutbox = (code: string, ops: Op[]): void => {
   try {
-    if (ops.length === 0) window.localStorage.removeItem(OUTBOX_PREFIX + code);
-    else window.localStorage.setItem(OUTBOX_PREFIX + code, JSON.stringify(ops));
+    const store = storage();
+    if (!store) return;
+    if (ops.length === 0) store.removeItem(OUTBOX_PREFIX + code);
+    else store.setItem(OUTBOX_PREFIX + code, JSON.stringify(ops));
   } catch {
     // Navigation privee ou quota plein : on continue sans persistance.
   }
