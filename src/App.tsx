@@ -76,7 +76,7 @@ function Landing() {
           autoComplete="off"
           autoCapitalize="none"
           spellCheck={false}
-          placeholder="fousdubus-…"
+          placeholder="code partagé dans le groupe"
         />
         <button
           type="submit"

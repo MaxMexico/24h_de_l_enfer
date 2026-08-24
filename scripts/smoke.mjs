@@ -3,6 +3,8 @@ import { mkdirSync } from 'node:fs';
 
 const SHOTS = new URL('../screenshots/', import.meta.url).pathname;
 const BASE = 'http://127.0.0.1:4173/24h_de_l_enfer/';
+// Supabase est bouchonne : n'importe quel code fait l'affaire.
+const CODE = process.env.TEAM_CODE ?? 'code-de-test';
 
 // Depart fictif : il y a 3 h pour une course en cours, 25 h avec
 // FINISHED=1 pour verifier le bilan de fin.
@@ -80,7 +82,7 @@ await page.route('**/rest/v1/**', async (route) => {
 });
 await page.route('**/realtime/**', (route) => route.abort());
 
-await page.goto(`${BASE}#/t/fousdubus-a7f3`, { waitUntil: 'networkidle' });
+await page.goto(`${BASE}#/t/${CODE}`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(900);
 
 const shot = async (name) => {

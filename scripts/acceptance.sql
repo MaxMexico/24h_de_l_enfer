@@ -2,7 +2,9 @@
 -- A jouer dans le SQL editor Supabase (role postgres) : le script simule
 -- le role `anon` et l'en-tete x-team-code exactement comme PostgREST.
 --
---   psql "$DATABASE_URL" -f scripts/acceptance.sql
+-- Le code d'acces de l'equipe est la cle d'ecriture : il n'a rien a faire
+-- dans un depot public. Renseigner `v_code` juste en dessous avant de
+-- jouer le script, et ne pas commiter la substitution.
 --
 -- Aucune donnee de course n'est laissee derriere : le bloc final nettoie.
 
@@ -11,6 +13,8 @@ grant insert on t_res to anon;
 
 do $$
 declare
+  v_code text := 'COLLER-LE-CODE-ICI';
+  v_hdr  text;
   v_team uuid; v_r1 uuid; n int; nm text; op uuid;
   v_q uuid; v_s uuid; op_txt text;
   a uuid := gen_random_uuid();
@@ -19,8 +23,14 @@ declare
   d uuid := gen_random_uuid();
   e uuid := gen_random_uuid();
 begin
-  select id into v_team from public.teams where access_code = 'fousdubus-a7f3';
+  select id into v_team from public.teams where access_code = v_code;
   select id into v_r1 from public.runners where team_id = v_team order by position limit 1;
+
+  if v_team is null then
+    raise exception 'Code d''acces inconnu : renseigner v_code en tete du script.';
+  end if;
+
+  v_hdr := json_build_object('x-team-code', v_code)::text;
 
   -- Le script ecrit de vrais relais : interdit pendant la course.
   if exists (select 1 from public.legs where team_id = v_team and deleted_at is null) then
@@ -33,7 +43,7 @@ begin
   insert into t_res values ('S1. lecture sans code', n::text, '0', n = 0);
   reset role;
 
-  set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+  set local role anon; execute format('set local request.headers = %L', v_hdr);
   select count(*) into n from public.teams;
   insert into t_res values ('S2. lecture avec le bon code', n::text, '1', n = 1);
   reset role;
@@ -44,7 +54,7 @@ begin
   reset role;
 
   begin
-    set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+    set local role anon; execute format('set local request.headers = %L', v_hdr);
     perform access_code from public.teams;
     insert into t_res values ('S4. access_code illisible', 'lisible', 'refuse', false);
   exception when insufficient_privilege then
@@ -85,7 +95,7 @@ begin
   reset role;
 
   begin
-    set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+    set local role anon; execute format('set local request.headers = %L', v_hdr);
     update public.teams set access_code = 'vole' where id = v_team;
     insert into t_res values ('S8. changer son access_code', 'accepte', 'refuse', false);
   exception when insufficient_privilege then
@@ -95,7 +105,7 @@ begin
   reset role;
 
   begin
-    set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+    set local role anon; execute format('set local request.headers = %L', v_hdr);
     delete from public.legs where team_id = v_team;
     insert into t_res values ('S9. delete expose', 'accepte', 'refuse', false);
   exception when insufficient_privilege then
@@ -105,7 +115,7 @@ begin
   reset role;
 
   ------------------------------------------------------------------ relais
-  set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+  set local role anon; execute format('set local request.headers = %L', v_hdr);
 
   perform public.record_relay(a, null, now());
   select count(*) into n from public.legs where team_id = v_team and deleted_at is null;
@@ -163,7 +173,7 @@ begin
   reset role;
   select id into v_q from public.runners where team_id = v_team and name = 'Quentin';
   select id into v_s from public.runners where team_id = v_team and name = 'Soulard';
-  set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+  set local role anon; execute format('set local request.headers = %L', v_hdr);
 
   update public.teams set plan = jsonb_build_array(
     jsonb_build_object('runnerId', v_q, 'loops', 2),

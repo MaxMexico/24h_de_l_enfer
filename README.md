@@ -12,15 +12,16 @@ L'app répond à quatre questions, sur un téléphone, la nuit, par des gens
 ## Lien de course
 
 ```
-https://<utilisateur>.github.io/24h_de_l_enfer/#/t/fousdubus-a7f3
+https://<utilisateur>.github.io/24h_de_l_enfer/#/t/<code-equipe>
 ```
 
 Le code d'équipe est dans l'URL. Les 4 coureurs ouvrent le même lien, et les
 4 téléphones peuvent enregistrer un relais. Le lien est mémorisé : à la
 réouverture, l'app repart directement sur la course.
 
-**Ce code est la clé d'écriture de l'équipe** — le partager uniquement dans le
-groupe. Pour le changer, voir « Changer le code d'accès » plus bas.
+**Ce code est la clé d'écriture de l'équipe.** Il n'est volontairement écrit
+nulle part dans ce dépôt — qui est public — et se partage uniquement dans le
+groupe. Voir « Changer le code d'accès » plus bas.
 
 ---
 
@@ -94,7 +95,7 @@ cp .env.example .env      # renseigner les deux variables
 npm run dev
 ```
 
-Puis ouvrir `http://localhost:5173/24h_de_l_enfer/#/t/fousdubus-a7f3`.
+Puis ouvrir `http://localhost:5173/24h_de_l_enfer/#/t/<code-equipe>`.
 
 ```bash
 npm test          # moteur de planning + file d'envoi (42 tests)
@@ -359,6 +360,11 @@ node scripts/smoke.mjs
 node scripts/resilience.mjs
 ```
 
+Ces scripts bouchonnent Supabase : ils n'ont pas besoin du vrai code
+d'équipe. `scripts/acceptance.sql`, lui, tape dans la vraie base — renseigner
+`v_code` en tête du fichier avant de le jouer, et ne pas commiter la
+substitution.
+
 Les captures atterrissent dans `screenshots/`.
 
 ---
@@ -371,10 +377,26 @@ volontaire. Depuis le SQL editor Supabase :
 ```sql
 update public.teams
 set access_code = 'nouveau-code'
-where access_code = 'fousdubus-a7f3';
+where access_code = 'ancien-code';
 ```
 
-Puis repartager le lien `#/t/nouveau-code`.
+Puis repartager le lien `#/t/nouveau-code`. Rien d'autre à changer : l'app lit
+le code depuis l'URL.
+
+### Pourquoi il n'est pas dans le dépôt
+
+Ce dépôt est public — c'est ce qu'impose GitHub Pages sur un compte Free. La
+clé `anon` de Supabase peut y être sans risque : elle finit de toute façon dans
+le bundle JS servi aux navigateurs, et la sécurité repose entièrement sur les
+policies RLS.
+
+L'`access_code`, lui, **est** la clé d'écriture de l'équipe. Il est donc traité
+comme un secret : absent des sources, absent du seed (qui sème un placeholder à
+remplacer aussitôt), et fourni aux scripts de test par variable
+d'environnement (`TEAM_CODE`) ou par substitution manuelle.
+
+Un code déjà passé par un dépôt public est brûlé : l'historique git le
+conserve. Le seul remède est d'en changer, ce qui prend une requête.
 
 ---
 
