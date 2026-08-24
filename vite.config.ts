@@ -44,7 +44,8 @@ export default defineConfig({
     }),
   ],
   test: {
-    environment: 'node',
+    // jsdom fournit localStorage, dont depend la file d'envoi persistee.
+    environment: 'jsdom',
     include: ['src/**/*.test.ts'],
   },
 });

@@ -186,7 +186,9 @@ export type Database = {
         }
       }
       undo_last_leg: {
-        Args: never
+        Args: {
+          p_expected_leg_id?: string
+        }
         Returns: {
           created_at: string
           deleted_at: string | null

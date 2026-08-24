@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RaceRing } from '../components/RaceRing';
+import { RaceSummary } from '../components/RaceSummary';
 import {
-  computeSchedule,
-  estimatedLiveLoops,
-  nextRunnerAfter,
   activeRunners,
+  computeSchedule,
   paceOf,
   phaseAt,
   plannedLoops,
@@ -12,11 +11,14 @@ import {
 } from '../domain/schedule';
 import type { Runner } from '../domain/types';
 import { fmtClock, fmtDur, fmtKm, fmtShort } from '../lib/time';
-import { openLegOf, type UseRace } from '../state/useRace';
+import { incomingRunner, openLegOf, type UseRace } from '../state/useRace';
 
 interface Props {
   race: UseRace;
   now: number;
+  /** Coureur qui tient ce telephone. Null tant qu'il ne s'est pas designe. */
+  meId: string | null;
+  setMeId: (id: string) => void;
 }
 
 /**
@@ -25,7 +27,7 @@ interface Props {
  */
 const RELAY_GUARD_MS = 15_000;
 
-export function CourseScreen({ race, now }: Props) {
+export function CourseScreen({ race, now, meId, setMeId }: Props) {
   const data = race.data!;
   const { team, runners, legs } = data;
 
@@ -46,13 +48,10 @@ export function CourseScreen({ race, now }: Props) {
 
   const finished = nowMin >= team.raceMinutes;
   const started = legs.some((l) => l.deletedAt === null);
+  const incoming = incomingRunner(data);
+  const over = finished && started && open === null;
 
-  // Coureur qui prendra le relais : sert a teinter le bouton.
-  const incoming = open
-    ? nextRunnerAfter(roster, open.runnerId)
-    : (roster[0] ?? null);
-
-  // Boucles a inscrire sur le relais qu'on ferme.
+  // Boucles a inscrire sur le relais qu'on ferme, si personne ne les a comptees.
   const closingLoops = useMemo(() => {
     if (!open) return null;
     const phase = phaseAt(team.phases, Math.max(0, (open.startedAt - team.raceStart) / 60000));
@@ -72,9 +71,8 @@ export function CourseScreen({ race, now }: Props) {
   };
 
   const onRelay = () => {
-    // Un relais dure au minimum une boucle : deux appuis rapproches sont
-    // toujours le meme passage, tape deux fois parce que rien n'a semble
-    // bouger. On confirme au lieu d'empiler des relais fantomes.
+    // Deux appuis rapproches sont le meme passage, tape deux fois parce que
+    // rien n'a semble bouger. On confirme au lieu d'empiler des relais.
     if (open !== null && now - open.startedAt < RELAY_GUARD_MS) {
       showFlash(open.startedAt, true);
       navigator.vibrate?.(15);
@@ -105,13 +103,22 @@ export function CourseScreen({ race, now }: Props) {
     [km, upcoming, team.loopKm],
   );
 
-  const liveLoops =
-    open && current
-      ? estimatedLiveLoops(open, now, team.loopKm, paceOf(open.runnerId, legs, team.loopKm, team.refPaceSec))
-      : 0;
-
   return (
     <div className="px-4 pb-6 pt-3">
+      {meId === null && roster.length > 0 && (
+        <IdentityPicker roster={roster} onPick={setMeId} />
+      )}
+
+      {meId !== null && !finished && (
+        <MyTurn
+          meId={meId}
+          open={open}
+          upcoming={upcoming}
+          runners={runners}
+          now={now}
+        />
+      )}
+
       <div className="relative flex justify-center">
         <RaceRing
           schedule={schedule}
@@ -150,7 +157,7 @@ export function CourseScreen({ race, now }: Props) {
               {current.name}
             </div>
 
-            <div className="mt-3.5 grid grid-cols-3 gap-2.5">
+            <div className="mt-3.5 grid grid-cols-2 gap-2.5">
               <div>
                 <div className="stat-k">Sur ce relais</div>
                 <div className="mono mt-1 text-lg">{fmtDur((now - open.startedAt) / 1000)}</div>
@@ -161,14 +168,14 @@ export function CourseScreen({ race, now }: Props) {
                   {liveEntry ? fmtClock(team.raceStart + liveEntry.endMin * 60000) : '—'}
                 </div>
               </div>
-              <div>
-                <div className="stat-k">Boucles</div>
-                <div className="mono mt-1 text-lg">
-                  {liveLoops}
-                  <span className="text-muted">/{closingLoops ?? '—'}</span>
-                </div>
-              </div>
             </div>
+
+            <LoopCounter
+              loops={open.loops}
+              target={closingLoops}
+              loopKm={team.loopKm}
+              onChange={(n) => race.setLoops(open.id, n)}
+            />
 
             {nextEntry && (
               <div className="mt-3.5 flex items-center gap-2.5 border-t border-line pt-3.5">
@@ -197,25 +204,27 @@ export function CourseScreen({ race, now }: Props) {
             <div className="disp mt-1 text-[30px] font-semibold leading-tight">
               {finished && started ? 'Course terminée' : 'En attente du départ'}
             </div>
-            <div className="mt-2 text-[11px] text-muted">
-              {started
-                ? `${fmtKm(km)} km parcourus`
-                : `${roster[0]?.name ?? 'Le premier coureur'} part en premier. Appuie au coup de pistolet.`}
-            </div>
+            {!over && (
+              <div className="mt-2 text-[11px] text-muted">
+                {started
+                  ? `${fmtKm(km)} km parcourus`
+                  : `${roster[0]?.name ?? 'Le premier coureur'} part en premier. Appuie au coup de pistolet.`}
+              </div>
+            )}
           </>
         )}
 
-        <button
-          type="button"
-          onClick={onRelay}
-          disabled={finished && started && !open}
-          style={{ background: incoming?.color ?? '#5BC0EB' }}
-          className="disp mt-3.5 w-full rounded-2xl px-4 py-6 text-2xl font-semibold uppercase
-                     tracking-[0.1em] text-bg transition-transform active:scale-[0.985]
-                     disabled:bg-raised disabled:text-dim"
-        >
-          {open ? 'Relais' : started ? 'Reprendre' : 'Départ'}
-        </button>
+        {!over && (
+          <button
+            type="button"
+            onClick={onRelay}
+            style={{ background: incoming?.color ?? '#5BC0EB' }}
+            className="disp mt-3.5 w-full rounded-2xl px-4 py-6 text-2xl font-semibold uppercase
+                       tracking-[0.1em] text-bg transition-transform active:scale-[0.985]"
+          >
+            {open ? 'Relais' : started ? 'Reprendre' : 'Départ'}
+          </button>
+        )}
 
         {flash !== null && (
           <div
@@ -239,17 +248,153 @@ export function CourseScreen({ race, now }: Props) {
         )}
       </div>
 
-      <div className="card mt-3">
-        <div className="eyebrow">Équipe</div>
-        <div className="mt-1.5 flex items-baseline gap-2.5">
-          <div className="mono text-[28px]">{fmtKm(km)}</div>
-          <div className="text-[13px] text-muted">km parcourus</div>
+      {finished && started ? (
+        <RaceSummary data={data} schedule={schedule} now={now} />
+      ) : (
+        <div className="card mt-3">
+          <div className="eyebrow">Équipe</div>
+          <div className="mt-1.5 flex items-baseline gap-2.5">
+            <div className="mono text-[28px]">{fmtKm(km)}</div>
+            <div className="text-[13px] text-muted">km parcourus</div>
+          </div>
+          <div className="mt-1 text-[11px] text-muted">
+            Projection sur 24 h · {projectedKm.toFixed(0)} km ·{' '}
+            {Math.round(projectedKm / team.loopKm)} boucles
+          </div>
         </div>
-        <div className="mt-1 text-[11px] text-muted">
-          Projection sur 24 h · {projectedKm.toFixed(0)} km ·{' '}
-          {Math.round(projectedKm / team.loopKm)} boucles
+      )}
+    </div>
+  );
+}
+
+/* --------------------------- compteur de boucles --------------------------- */
+
+/**
+ * Boucles reellement bouclees sur le relais en cours. C'est celui qui est
+ * en zone relais qui pointe a chaque passage : le total de l'equipe devient
+ * un chiffre constate, pas une estimation.
+ */
+function LoopCounter({
+  loops,
+  target,
+  loopKm,
+  onChange,
+}: {
+  loops: number;
+  target: number | null;
+  loopKm: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <div className="mt-3.5 flex items-center gap-3 rounded-xl border border-line bg-raised p-2.5">
+      <button
+        type="button"
+        aria-label="Retirer une boucle"
+        onClick={() => onChange(Math.max(0, loops - 1))}
+        disabled={loops === 0}
+        className="h-12 w-12 flex-none rounded-lg border border-line text-xl disabled:opacity-30"
+      >
+        −
+      </button>
+      <div className="min-w-0 flex-1 text-center">
+        <div className="mono text-2xl leading-none">
+          {loops}
+          {target !== null && <span className="text-muted">/{target}</span>}
+        </div>
+        <div className="mt-1 text-[10px] uppercase tracking-[0.1em] text-muted">
+          boucles · {fmtKm(loops * loopKm)} km
         </div>
       </div>
+      <button
+        type="button"
+        aria-label="Ajouter une boucle"
+        onClick={() => onChange(loops + 1)}
+        className="h-12 w-12 flex-none rounded-lg border border-line text-xl"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+/* ------------------------------ mon prochain ------------------------------ */
+
+function IdentityPicker({
+  roster,
+  onPick,
+}: {
+  roster: Runner[];
+  onPick: (id: string) => void;
+}) {
+  return (
+    <div className="card mb-3">
+      <div className="eyebrow">Qui utilise ce téléphone ?</div>
+      <p className="mt-1 text-[11px] text-muted">
+        Pour afficher ton prochain départ sans avoir à te chercher dans la liste.
+      </p>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        {roster.map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => onPick(r.id)}
+            className="flex items-center gap-2 rounded-xl border border-line bg-raised px-3 py-3 text-sm font-medium"
+          >
+            <span
+              className="h-3 w-3 flex-none rounded-full"
+              style={{ background: r.color }}
+              aria-hidden
+            />
+            {r.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MyTurn({
+  meId,
+  open,
+  upcoming,
+  runners,
+  now,
+}: {
+  meId: string;
+  open: ReturnType<typeof openLegOf>;
+  upcoming: ReturnType<typeof computeSchedule>;
+  runners: Runner[];
+  now: number;
+}) {
+  const me = runners.find((r) => r.id === meId);
+  if (!me) return null;
+
+  const running = open?.runnerId === meId;
+  const next = upcoming.find((e) => e.runnerId === meId);
+
+  return (
+    <div
+      className="mb-3 rounded-2xl border px-4 py-3"
+      style={{ borderColor: `${me.color}55`, background: `${me.color}14` }}
+    >
+      <div className="eyebrow" style={{ color: me.color }}>
+        {me.name}
+      </div>
+      {running ? (
+        <div className="mt-0.5 text-lg font-semibold">C’est ton tour — tu es en piste</div>
+      ) : next ? (
+        <>
+          <div className="mt-0.5 text-lg font-semibold">
+            Tu repars dans{' '}
+            <span className="mono">{fmtShort(Math.max(0, next.startedAt - now) / 1000)}</span>
+          </div>
+          <div className="mt-0.5 text-[11px] text-muted">
+            vers <span className="mono">{fmtClock(next.startedAt)}</span> · {next.loops} boucles
+          </div>
+        </>
+      ) : (
+        <div className="mt-0.5 text-lg font-semibold">Plus de créneau prévu</div>
+      )}
     </div>
   );
 }

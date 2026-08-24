@@ -7,11 +7,14 @@ import { CourseScreen } from './screens/CourseScreen';
 import { EquipeScreen } from './screens/EquipeScreen';
 import { RotationScreen } from './screens/RotationScreen';
 import { useClock } from './state/useClock';
+import { useClockSkew } from './state/useClockSkew';
 import { useRace } from './state/useRace';
 import { useWakeLock } from './state/useWakeLock';
 
 const LAST_CODE = 'fdb24:last-code';
 const OFFSET_KEY = 'fdb24:clock-offset';
+const WAKE_KEY = 'fdb24:wake-lock';
+const ME_PREFIX = 'fdb24:me:';
 
 const readStored = (key: string): string | null => {
   try {
@@ -100,9 +103,32 @@ function Board() {
     writeStored(OFFSET_KEY, String(ms));
   };
 
-  const now = useClock(offset);
+  // L'horloge du telephone est recalee sur celle du serveur : quatre
+  // telephones qui ne sont pas d'accord sur l'heure faussent les allures.
+  const skew = useClockSkew();
+  const now = useClock(offset + skew);
   const [tab, setTab] = useState<'course' | 'rotation' | 'equipe'>('course');
-  const wakeLockHeld = useWakeLock(race.status === 'ready');
+
+  // Le verrou d'ecran est un choix, pas un defaut : sur le telephone de
+  // quelqu'un qui dort sous la tente, c'est de la batterie brulee pour rien.
+  const [wakeLockOn, setWakeLockOnState] = useState(() => readStored(WAKE_KEY) === '1');
+  const setWakeLockOn = (on: boolean) => {
+    setWakeLockOnState(on);
+    writeStored(WAKE_KEY, on ? '1' : '0');
+  };
+  const wakeLockHeld = useWakeLock(wakeLockOn && race.status === 'ready');
+
+  const teamId = race.data?.team.id ?? null;
+  const [meId, setMeIdState] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMeIdState(teamId ? readStored(ME_PREFIX + teamId) : null);
+  }, [teamId]);
+
+  const setMeId = (id: string) => {
+    setMeIdState(id);
+    if (teamId) writeStored(ME_PREFIX + teamId, id);
+  };
 
   useEffect(() => {
     if (race.status === 'ready') writeStored(LAST_CODE, code);
@@ -145,7 +171,9 @@ function Board() {
       </header>
 
       <main>
-        {tab === 'course' && <CourseScreen race={race} now={now} />}
+        {tab === 'course' && (
+          <CourseScreen race={race} now={now} meId={meId} setMeId={setMeId} />
+        )}
         {tab === 'rotation' && <RotationScreen race={race} now={now} />}
         {tab === 'equipe' && (
           <EquipeScreen
@@ -154,7 +182,12 @@ function Board() {
             offset={offset}
             setOffset={setOffset}
             code={code}
+            wakeLockOn={wakeLockOn}
+            setWakeLockOn={setWakeLockOn}
             wakeLockHeld={wakeLockHeld}
+            skew={skew}
+            meId={meId}
+            setMeId={setMeId}
           />
         )}
       </main>

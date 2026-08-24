@@ -72,22 +72,32 @@ begin
   reset role;
 
   begin
-    set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
-    update public.teams set access_code = 'vole' where id = v_team;
-    insert into t_res values ('S7. changer son access_code', 'accepte', 'refuse', false);
+    set local role anon; set local request.headers = '{"x-team-code":"pirate-9999"}';
+    perform public.undo_last_leg(null);
+    insert into t_res values ('S7. undo, mauvais code', 'accepte', 'refuse', false);
   exception when insufficient_privilege then
     reset role;
-    insert into t_res values ('S7. changer son access_code', 'refuse', 'refuse', true);
+    insert into t_res values ('S7. undo, mauvais code', 'refuse', 'refuse', true);
+  end;
+  reset role;
+
+  begin
+    set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
+    update public.teams set access_code = 'vole' where id = v_team;
+    insert into t_res values ('S8. changer son access_code', 'accepte', 'refuse', false);
+  exception when insufficient_privilege then
+    reset role;
+    insert into t_res values ('S8. changer son access_code', 'refuse', 'refuse', true);
   end;
   reset role;
 
   begin
     set local role anon; set local request.headers = '{"x-team-code":"fousdubus-a7f3"}';
     delete from public.legs where team_id = v_team;
-    insert into t_res values ('S8. delete expose', 'accepte', 'refuse', false);
+    insert into t_res values ('S9. delete expose', 'accepte', 'refuse', false);
   exception when insufficient_privilege then
     reset role;
-    insert into t_res values ('S8. delete expose', 'refuse', 'refuse', true);
+    insert into t_res values ('S9. delete expose', 'refuse', 'refuse', true);
   end;
   reset role;
 
@@ -127,13 +137,23 @@ begin
   insert into t_res values ('R10. relais ouvert inchange',
                             case when op = b then 'b' else 'autre' end, 'b', op = b);
 
-  perform public.undo_last_leg();
+  perform public.undo_last_leg(b);
   select count(*) into n from public.legs where team_id = v_team and deleted_at is null;
   insert into t_res values ('R11. annulation : retour a un relais', n::text, '1', n = 1);
   select l.id into op from public.legs l
    where l.team_id = v_team and l.ended_at is null and l.deleted_at is null;
   insert into t_res values ('R12. annulation : precedent rouvert',
                             case when op = a then 'a' else 'autre' end, 'a', op = a);
+
+  -- Rejeu de la meme annulation : ne doit pas manger un deuxieme relais.
+  perform public.undo_last_leg(b);
+  select count(*) into n from public.legs where team_id = v_team and deleted_at is null;
+  insert into t_res values ('R13. annulation rejouee', n::text, '1', n = 1);
+
+  -- Un deuxieme telephone annule en meme temps, en visant le meme relais.
+  perform public.undo_last_leg(b);
+  select count(*) into n from public.legs where team_id = v_team and deleted_at is null;
+  insert into t_res values ('R14. annulation simultanee', n::text, '1', n = 1);
 
   reset role;
 

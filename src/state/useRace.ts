@@ -1,111 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { activeRunners, liveLegs, nextRunnerAfter } from '../domain/schedule';
-import type { Leg, Runner, Team } from '../domain/types';
-import type { Json, TablesUpdate } from '../lib/database.types';
+import { activeRunners } from '../domain/schedule';
+import type { Runner, Team } from '../domain/types';
 import { TEAM_COLUMNS, toLeg, toRunner, toTeam } from '../lib/mappers';
 import { clientFor, isConfigured, type Client } from '../lib/supabase';
 import { uuid } from '../lib/time';
+import {
+  applyOp,
+  loadOutbox,
+  openLegOf,
+  runOp,
+  saveOutbox,
+  type Op,
+  type RaceData,
+} from './ops';
+
+export type { RaceData } from './ops';
+export { openLegOf } from './ops';
 
 /** Etat d'envoi affiche en permanence : on doit savoir si la saisie est partie. */
 export type SyncState = 'idle' | 'pending' | 'error';
 
-export interface RaceData {
-  team: Team;
-  runners: Runner[];
-  legs: Leg[];
-}
-
-interface Op {
-  key: string;
-  attempt: number;
-  /** Application optimiste locale, identique a ce que fera le serveur. */
-  apply: (data: RaceData) => RaceData;
-  /** Envoi reel. Rend l'etat serveur frais quand il le connait. */
-  run: (client: Client, teamId: string) => Promise<Partial<RaceData> | null>;
-}
-
 /** Deux relances automatiques, puis on rend la main a l'utilisateur. */
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [600, 2000];
-
-export const openLegOf = (legs: Leg[]): Leg | null =>
-  liveLegs(legs).find((l) => l.endedAt === null) ?? null;
-
-/* ----------------------------- mutations pures ----------------------------- */
-
-interface RelayInput {
-  legId: string;
-  closingLegId: string | null;
-  at: number;
-  runnerId: string | null;
-  closingLoops: number | null;
-}
-
-/**
- * Reproduit exactement la logique de `record_relay` cote Postgres, pour que
- * l'affichage optimiste corresponde a ce que la base finira par contenir.
- */
-export const applyRelay = (data: RaceData, input: RelayInput): RaceData => {
-  if (data.legs.some((l) => l.id === input.legId)) return data;
-
-  const open = openLegOf(data.legs);
-  const roster = activeRunners(data.runners);
-  let legs = data.legs;
-  let at = input.at;
-  let runnerId: string | null;
-
-  if (input.closingLegId === null) {
-    if (open !== null) return data;
-    runnerId = input.runnerId ?? roster[0]?.id ?? null;
-  } else {
-    // Un autre telephone a deja enregistre ce passage : on ne double pas.
-    if (open === null || open.id !== input.closingLegId) return data;
-    at = Math.max(at, open.startedAt);
-    legs = legs.map((l) =>
-      l.id === open.id
-        ? { ...l, endedAt: at, loops: input.closingLoops ?? l.loops }
-        : l,
-    );
-    runnerId = input.runnerId ?? nextRunnerAfter(roster, open.runnerId)?.id ?? null;
-  }
-
-  if (runnerId === null) return data;
-
-  return {
-    ...data,
-    legs: [
-      ...legs,
-      {
-        id: input.legId,
-        teamId: data.team.id,
-        runnerId,
-        startedAt: at,
-        endedAt: null,
-        loops: 0,
-        note: null,
-        deletedAt: null,
-      },
-    ],
-  };
-};
-
-export const applyUndo = (data: RaceData, at: number): RaceData => {
-  const visible = liveLegs(data.legs);
-  const last = visible[visible.length - 1];
-  if (!last) return data;
-
-  const prev = visible[visible.length - 2];
-  return {
-    ...data,
-    legs: data.legs.map((l) => {
-      if (l.id === last.id) return { ...l, deletedAt: at };
-      if (prev && l.id === prev.id) return { ...l, endedAt: null };
-      return l;
-    }),
-  };
-};
-
-/* --------------------------------- hook --------------------------------- */
 
 export interface UseRace {
   status: 'loading' | 'ready' | 'error';
@@ -130,15 +47,27 @@ export const useRace = (code: string): UseRace => {
   const [server, setServer] = useState<RaceData | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState<Op[]>([]);
+  // La file est restauree avant tout appel reseau : un relais saisi juste
+  // avant que l'onglet soit tue repart des la reouverture.
+  const [pending, setPending] = useState<Op[]>(() => loadOutbox(code));
   const [failed, setFailed] = useState(false);
   const [live, setLive] = useState(false);
 
-  const queue = useRef<Op[]>([]);
+  const queue = useRef<Op[]>(pending);
+  const attempts = useRef(new Map<string, number>());
   const draining = useRef(false);
   const teamId = server?.team.id ?? null;
 
   const client = useMemo(() => (isConfigured ? clientFor(code) : null), [code]);
+
+  const commitQueue = useCallback(
+    (ops: Op[]) => {
+      queue.current = ops;
+      setPending(ops);
+      saveOutbox(code, ops);
+    },
+    [code],
+  );
 
   /* ------------------------------ lecture ------------------------------ */
 
@@ -253,82 +182,80 @@ export const useRace = (code: string): UseRace => {
 
   /* ------------------------------ ecriture ------------------------------ */
 
-  const drain = useCallback(async () => {
-    if (draining.current || !client) return;
-    draining.current = true;
+  const drain = useCallback(
+    async (activeClient: Client, tid: string) => {
+      if (draining.current) return;
+      draining.current = true;
 
-    while (queue.current.length > 0) {
-      const op = queue.current[0]!;
-      try {
-        const fresh = await op.run(client, teamId ?? '');
-        queue.current = queue.current.slice(1);
-        setPending([...queue.current]);
-        setFailed(false);
-        if (fresh) setServer((prev) => (prev ? { ...prev, ...fresh } : prev));
-        else refresh();
-      } catch {
-        op.attempt += 1;
-        if (op.attempt >= MAX_ATTEMPTS) {
-          // On garde l'operation en tete de file : l'utilisateur relance.
-          setFailed(true);
-          break;
+      while (queue.current.length > 0) {
+        const op = queue.current[0]!;
+        try {
+          const fresh = await runOp(activeClient, tid, op);
+          attempts.current.delete(op.key);
+          commitQueue(queue.current.slice(1));
+          setFailed(false);
+          if (fresh) setServer((prev) => (prev ? { ...prev, ...fresh } : prev));
+          else refresh();
+        } catch {
+          const tried = (attempts.current.get(op.key) ?? 0) + 1;
+          attempts.current.set(op.key, tried);
+          if (tried >= MAX_ATTEMPTS) {
+            // On garde l'operation en tete de file : l'utilisateur relance,
+            // et elle est deja sur le disque si l'app est fermee entre-temps.
+            setFailed(true);
+            break;
+          }
+          await new Promise((r) => setTimeout(r, BACKOFF_MS[tried - 1] ?? 2000));
         }
-        const wait = BACKOFF_MS[op.attempt - 1] ?? 2000;
-        await new Promise((r) => setTimeout(r, wait));
       }
-    }
 
-    draining.current = false;
-  }, [client, teamId, refresh]);
+      draining.current = false;
+    },
+    [commitQueue, refresh],
+  );
+
+  const kick = useCallback(() => {
+    if (client && teamId) void drain(client, teamId);
+  }, [client, teamId, drain]);
+
+  // Rejeu de la file restauree des que l'equipe est connue.
+  useEffect(() => {
+    if (client && teamId && queue.current.length > 0) void drain(client, teamId);
+  }, [client, teamId, drain]);
 
   const enqueue = useCallback(
-    (op: Omit<Op, 'attempt'>) => {
-      queue.current = [...queue.current, { ...op, attempt: 0 }];
-      setPending([...queue.current]);
-      void drain();
+    (op: Op) => {
+      commitQueue([...queue.current, op]);
+      kick();
     },
-    [drain],
+    [commitQueue, kick],
   );
 
   const retry = useCallback(() => {
-    for (const op of queue.current) op.attempt = 0;
+    attempts.current.clear();
     setFailed(false);
-    void drain();
-  }, [drain]);
+    kick();
+  }, [kick]);
 
   /* ------------------------------- actions ------------------------------- */
 
   const data = useMemo(() => {
     if (!server) return null;
-    return pending.reduce<RaceData>((acc, op) => op.apply(acc), server);
+    return pending.reduce<RaceData>((acc, op) => applyOp(acc, op), server);
   }, [server, pending]);
 
   const relay = useCallback(
     (now: number, plannedLoops: number | null) => {
       if (!data) return;
       const open = openLegOf(data.legs);
-      const legId = uuid();
-      const input: RelayInput = {
-        legId,
+      enqueue({
+        kind: 'relay',
+        key: uuid(),
+        legId: uuid(),
         closingLegId: open?.id ?? null,
         at: now,
-        runnerId: null,
-        closingLoops: open ? plannedLoops : null,
-      };
-
-      enqueue({
-        key: legId,
-        apply: (d) => applyRelay(d, input),
-        run: async (c) => {
-          const { data: rows, error: e } = await c.rpc('record_relay', {
-            p_leg_id: legId,
-            p_closing_leg_id: input.closingLegId ?? undefined,
-            p_at: new Date(input.at).toISOString(),
-            p_closing_loops: input.closingLoops ?? undefined,
-          });
-          if (e) throw e;
-          return { legs: (rows ?? []).map(toLeg) };
-        },
+        // Si les boucles ont ete comptees en direct, elles font foi.
+        closingLoops: open === null ? null : open.loops > 0 ? null : plannedLoops,
       });
     },
     [data, enqueue],
@@ -337,14 +264,13 @@ export const useRace = (code: string): UseRace => {
   const undo = useCallback(
     (now: number) => {
       if (!data) return;
+      const visible = data.legs.filter((l) => l.deletedAt === null);
+      const last = visible[visible.length - 1];
       enqueue({
-        key: `undo-${uuid()}`,
-        apply: (d) => applyUndo(d, now),
-        run: async (c) => {
-          const { data: rows, error: e } = await c.rpc('undo_last_leg');
-          if (e) throw e;
-          return { legs: (rows ?? []).map(toLeg) };
-        },
+        kind: 'undo',
+        key: uuid(),
+        at: now,
+        expectedLegId: last?.id ?? null,
       });
     },
     [data, enqueue],
@@ -352,152 +278,55 @@ export const useRace = (code: string): UseRace => {
 
   const setLoops = useCallback(
     (legId: string, loops: number) => {
-      const value = Math.max(0, loops);
-      enqueue({
-        key: `loops-${legId}-${value}`,
-        apply: (d) => ({
-          ...d,
-          legs: d.legs.map((l) => (l.id === legId ? { ...l, loops: value } : l)),
-        }),
-        run: async (c) => {
-          const { error: e } = await c.from('legs').update({ loops: value }).eq('id', legId);
-          if (e) throw e;
-          return null;
-        },
-      });
+      enqueue({ kind: 'setLoops', key: uuid(), legId, loops: Math.max(0, loops) });
     },
     [enqueue],
   );
 
   const removeLeg = useCallback(
     (legId: string) => {
-      const at = new Date().toISOString();
-      enqueue({
-        key: `del-${legId}`,
-        apply: (d) => ({
-          ...d,
-          legs: d.legs.map((l) => (l.id === legId ? { ...l, deletedAt: Date.now() } : l)),
-        }),
-        run: async (c) => {
-          const { error: e } = await c.from('legs').update({ deleted_at: at }).eq('id', legId);
-          if (e) throw e;
-          return null;
-        },
-      });
+      enqueue({ kind: 'removeLeg', key: uuid(), legId, at: Date.now() });
     },
     [enqueue],
   );
 
   const addLeg = useCallback(
     (input: { runnerId: string; startedAt: number; endedAt: number; loops: number }) => {
-      const legId = uuid();
-      enqueue({
-        key: `add-${legId}`,
-        apply: (d) => ({
-          ...d,
-          legs: [
-            ...d.legs,
-            {
-              id: legId,
-              teamId: d.team.id,
-              runnerId: input.runnerId,
-              startedAt: input.startedAt,
-              endedAt: input.endedAt,
-              loops: input.loops,
-              note: null,
-              deletedAt: null,
-            },
-          ],
-        }),
-        run: async (c, tid) => {
-          const { error: e } = await c.from('legs').insert({
-            id: legId,
-            team_id: tid,
-            runner_id: input.runnerId,
-            started_at: new Date(input.startedAt).toISOString(),
-            ended_at: new Date(input.endedAt).toISOString(),
-            loops: input.loops,
-          });
-          if (e) throw e;
-          return null;
-        },
-      });
+      enqueue({ kind: 'addLeg', key: uuid(), legId: uuid(), ...input });
     },
     [enqueue],
   );
 
   const saveTeam = useCallback(
     (patch: Partial<Pick<Team, 'raceStart' | 'loopKm' | 'refPaceSec' | 'phases'>>) => {
-      enqueue({
-        key: `team-${uuid()}`,
-        apply: (d) => ({ ...d, team: { ...d.team, ...patch } }),
-        run: async (c, tid) => {
-          const row: TablesUpdate<'teams'> = {};
-          if (patch.raceStart !== undefined) row.race_start = new Date(patch.raceStart).toISOString();
-          if (patch.loopKm !== undefined) row.loop_km = patch.loopKm;
-          if (patch.refPaceSec !== undefined) row.ref_pace_sec = patch.refPaceSec;
-          if (patch.phases !== undefined) row.phases = patch.phases as unknown as Json;
-          const { error: e } = await c.from('teams').update(row).eq('id', tid);
-          if (e) throw e;
-          return null;
-        },
-      });
+      enqueue({ kind: 'saveTeam', key: uuid(), patch });
     },
     [enqueue],
   );
 
   const saveRunners = useCallback(
     (runners: Runner[]) => {
-      enqueue({
-        key: `runners-${uuid()}`,
-        apply: (d) => ({ ...d, runners }),
-        run: async (c) => {
-          for (const r of runners) {
-            const { error: e } = await c
-              .from('runners')
-              .update({ name: r.name, position: r.position, color: r.color, active: r.active })
-              .eq('id', r.id);
-            if (e) throw e;
-          }
-          return null;
-        },
-      });
+      enqueue({ kind: 'saveRunners', key: uuid(), runners });
     },
     [enqueue],
   );
 
   const addRunner = useCallback(
     (input: { name: string; color: string }) => {
-      const id = uuid();
+      const positions = data?.runners.map((r) => r.position) ?? [];
       enqueue({
-        key: `runner-${id}`,
-        apply: (d) => ({
-          ...d,
-          runners: [
-            ...d.runners,
-            {
-              id,
-              name: input.name,
-              color: input.color,
-              active: true,
-              position: Math.max(0, ...d.runners.map((r) => r.position)) + 1,
-            },
-          ],
-        }),
-        run: async (c, tid) => {
-          const { error: e } = await c.from('runners').insert({
-            id,
-            team_id: tid,
-            name: input.name,
-            color: input.color,
-            position: (data?.runners.length ?? 0) + 1,
-          });
-          if (e) throw e;
-          return null;
+        kind: 'addRunner',
+        key: uuid(),
+        runner: {
+          id: uuid(),
+          name: input.name,
+          color: input.color,
+          active: true,
+          position: Math.max(0, ...positions) + 1,
         },
       });
     },
-    [enqueue, data],
+    [data, enqueue],
   );
 
   const sync: SyncState = failed ? 'error' : pending.length > 0 ? 'pending' : 'idle';
@@ -520,4 +349,14 @@ export const useRace = (code: string): UseRace => {
     retry,
     refresh,
   };
+};
+
+/** Coureur qui prendra le relais apres celui en piste. */
+export const incomingRunner = (data: RaceData): Runner | null => {
+  const roster = activeRunners(data.runners);
+  const open = openLegOf(data.legs);
+  if (!open) return roster[0] ?? null;
+  const idx = roster.findIndex((r) => r.id === open.runnerId);
+  if (idx === -1) return roster[0] ?? null;
+  return roster[(idx + 1) % roster.length] ?? null;
 };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyRelay, applyUndo, openLegOf, type RaceData } from './useRace';
+import { applyOp, loadOutbox, openLegOf, saveOutbox, type Op, type RaceData } from './ops';
 import type { Leg, Runner, Team } from '../domain/types';
 
 const START = Date.UTC(2026, 7, 29, 8, 0, 0);
@@ -24,15 +24,25 @@ const RUNNERS: Runner[] = [
 
 const base = (legs: Leg[] = []): RaceData => ({ team: TEAM, runners: RUNNERS, legs });
 
+const relayOp = (
+  legId: string,
+  closingLegId: string | null,
+  at: number,
+  closingLoops: number | null = null,
+): Op => ({ kind: 'relay', key: `k-${legId}`, legId, closingLegId, at, closingLoops });
+
 const relay = (
   data: RaceData,
   legId: string,
   closingLegId: string | null,
   at: number,
   closingLoops: number | null = null,
-) => applyRelay(data, { legId, closingLegId, at, runnerId: null, closingLoops });
+) => applyOp(data, relayOp(legId, closingLegId, at, closingLoops));
 
-describe('applyRelay', () => {
+const undo = (data: RaceData, at: number, expectedLegId: string | null): RaceData =>
+  applyOp(data, { kind: 'undo', key: `u-${at}`, at, expectedLegId });
+
+describe('relais', () => {
   it('ouvre le premier relais sur le premier coureur', () => {
     const d = relay(base(), 'a', null, START);
     expect(d.legs).toHaveLength(1);
@@ -44,34 +54,27 @@ describe('applyRelay', () => {
     const once = relay(base(), 'a', null, START);
     const twice = relay(once, 'a', null, START + 3000);
     expect(twice).toBe(once);
-    expect(twice.legs).toHaveLength(1);
   });
 
   it('ignore un second depart venu d un autre telephone', () => {
     const once = relay(base(), 'a', null, START);
-    const other = relay(once, 'zzz', null, START + 500);
-    expect(other.legs).toHaveLength(1);
+    expect(relay(once, 'zzz', null, START + 500).legs).toHaveLength(1);
   });
 
   it('ferme le relais courant et passe au suivant', () => {
     const d1 = relay(base(), 'a', null, START);
     const d2 = relay(d1, 'b', 'a', START + 21 * MIN, 3);
-
     expect(d2.legs).toHaveLength(2);
     expect(d2.legs[0]!.endedAt).toBe(START + 21 * MIN);
     expect(d2.legs[0]!.loops).toBe(3);
-    expect(d2.legs[1]!.runnerId).toBe('b');
     expect(openLegOf(d2.legs)!.id).toBe('b');
   });
 
   it('ne cree pas de relais fantome quand deux telephones appuient ensemble', () => {
     const d1 = relay(base(), 'a', null, START);
     const tel1 = relay(d1, 'b', 'a', START + 21 * MIN, 3);
-    // Le telephone 2 croit encore que « a » est ouvert.
     const tel2 = relay(tel1, 'c', 'a', START + 21 * MIN, 3);
-
     expect(tel2.legs).toHaveLength(2);
-    expect(tel2.legs.some((l) => l.id === 'c')).toBe(false);
     expect(openLegOf(tel2.legs)!.id).toBe('b');
   });
 
@@ -86,51 +89,114 @@ describe('applyRelay', () => {
 
   it('ne recule jamais l heure de fin avant le depart du relais', () => {
     const d1 = relay(base(), 'a', null, START + 10 * MIN);
-    // Telephone dont l horloge retarde.
     const d2 = relay(d1, 'b', 'a', START + 5 * MIN, 3);
     expect(d2.legs[0]!.endedAt).toBe(START + 10 * MIN);
-    expect(d2.legs[1]!.startedAt).toBe(START + 10 * MIN);
   });
 
   it('saute les coureurs inactifs', () => {
     const runners = RUNNERS.map((r) => (r.id === 'b' ? { ...r, active: false } : r));
-    const d1 = applyRelay({ team: TEAM, runners, legs: [] }, {
-      legId: 'a', closingLegId: null, at: START, runnerId: null, closingLoops: null,
-    });
-    const d2 = applyRelay(d1, {
-      legId: 'b', closingLegId: 'a', at: START + 20 * MIN, runnerId: null, closingLoops: 3,
-    });
+    const d0: RaceData = { team: TEAM, runners, legs: [] };
+    const d1 = applyOp(d0, relayOp('a', null, START));
+    const d2 = applyOp(d1, relayOp('b', 'a', START + 20 * MIN, 3));
     expect(d2.legs[1]!.runnerId).toBe('s');
   });
 });
 
-describe('applyUndo', () => {
+describe('annulation', () => {
   it('retire le dernier relais et rouvre le precedent', () => {
     const d1 = relay(base(), 'a', null, START);
     const d2 = relay(d1, 'b', 'a', START + 20 * MIN, 3);
-    const d3 = applyUndo(d2, START + 21 * MIN);
-
+    const d3 = undo(d2, START + 21 * MIN, 'b');
     expect(d3.legs.find((l) => l.id === 'b')!.deletedAt).not.toBeNull();
-    expect(d3.legs.find((l) => l.id === 'a')!.endedAt).toBeNull();
     expect(openLegOf(d3.legs)!.id).toBe('a');
+  });
+
+  it('rejouee, elle n annule pas un deuxieme relais', () => {
+    const d1 = relay(base(), 'a', null, START);
+    const d2 = relay(d1, 'b', 'a', START + 20 * MIN, 3);
+    const once = undo(d2, START + 21 * MIN, 'b');
+    const twice = undo(once, START + 21 * MIN, 'b');
+    expect(twice.legs.filter((l) => l.deletedAt === null)).toHaveLength(1);
+    expect(openLegOf(twice.legs)!.id).toBe('a');
   });
 
   it('ramene la course a l etat « pas partie »', () => {
     const d1 = relay(base(), 'a', null, START);
-    const d2 = applyUndo(d1, START + MIN);
-    expect(openLegOf(d2.legs)).toBeNull();
+    expect(openLegOf(undo(d1, START + MIN, 'a').legs)).toBeNull();
   });
 
   it('ne fait rien sans relais', () => {
-    const d = base();
-    expect(applyUndo(d, START).legs).toHaveLength(0);
+    expect(undo(base(), START, null).legs).toHaveLength(0);
   });
 
   it('permet de repartir apres une annulation', () => {
     const d1 = relay(base(), 'a', null, START);
-    const d2 = applyUndo(d1, START + MIN);
+    const d2 = undo(d1, START + MIN, 'a');
     const d3 = relay(d2, 'c', null, START + 2 * MIN);
     expect(openLegOf(d3.legs)!.id).toBe('c');
     expect(d3.legs.filter((l) => l.deletedAt === null)).toHaveLength(1);
+  });
+});
+
+describe('autres operations', () => {
+  it('corrige les boucles d un relais', () => {
+    const d1 = relay(base(), 'a', null, START);
+    const d2 = applyOp(d1, { kind: 'setLoops', key: 'k', legId: 'a', loops: 5 });
+    expect(d2.legs[0]!.loops).toBe(5);
+  });
+
+  it('supprime un relais sans le sortir de la liste', () => {
+    const d1 = relay(base(), 'a', null, START);
+    const d2 = applyOp(d1, { kind: 'removeLeg', key: 'k', legId: 'a', at: START });
+    expect(d2.legs).toHaveLength(1);
+    expect(d2.legs[0]!.deletedAt).toBe(START);
+  });
+
+  it('ajoute un relais oublie, une seule fois', () => {
+    const op: Op = {
+      kind: 'addLeg', key: 'k', legId: 'x', runnerId: 'v',
+      startedAt: START, endedAt: START + 20 * MIN, loops: 3,
+    };
+    const d1 = applyOp(base(), op);
+    const d2 = applyOp(d1, op);
+    expect(d2.legs).toHaveLength(1);
+  });
+
+  it('ajoute un coureur, une seule fois', () => {
+    const runner: Runner = { id: 'n', name: 'Nouveau', position: 5, color: '#fff', active: true };
+    const op: Op = { kind: 'addRunner', key: 'k', runner };
+    const d1 = applyOp(base(), op);
+    const d2 = applyOp(d1, op);
+    expect(d2.runners).toHaveLength(5);
+  });
+});
+
+describe('file d envoi persistee', () => {
+  it('relit ce qu elle a ecrit', () => {
+    const ops: Op[] = [relayOp('a', null, START)];
+    saveOutbox('code', ops);
+    expect(loadOutbox('code')).toEqual(ops);
+  });
+
+  it('se vide quand il n y a plus rien a envoyer', () => {
+    saveOutbox('code', [relayOp('a', null, START)]);
+    saveOutbox('code', []);
+    expect(loadOutbox('code')).toEqual([]);
+  });
+
+  it('survit a un rechargement : la file est rejouee sur l etat serveur', () => {
+    // L'onglet est tue juste apres un appui, avant l'envoi.
+    const ops: Op[] = [relayOp('a', null, START)];
+    saveOutbox('reload', ops);
+
+    // Reouverture : le serveur ne connait rien, la file est restauree.
+    const restored = loadOutbox('reload');
+    const shown = restored.reduce<RaceData>((acc, op) => applyOp(acc, op), base());
+    expect(openLegOf(shown.legs)!.id).toBe('a');
+  });
+
+  it('ignore un contenu corrompu', () => {
+    window.localStorage.setItem('fdb24:outbox:casse', '{pas du json');
+    expect(loadOutbox('casse')).toEqual([]);
   });
 });

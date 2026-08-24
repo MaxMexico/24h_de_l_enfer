@@ -10,11 +10,24 @@ interface Props {
   offset: number;
   setOffset: (ms: number) => void;
   code: string;
+  wakeLockOn: boolean;
+  setWakeLockOn: (on: boolean) => void;
   wakeLockHeld: boolean;
+  /** Ecart mesure avec l'horloge du serveur, en ms. */
+  skew: number;
+  meId: string | null;
+  setMeId: (id: string) => void;
 }
 
-export function EquipeScreen({ race, now, offset, setOffset, code, wakeLockHeld }: Props) {
-  const data = race.data!;
+/** Palette : plus rapide et plus lisible qu'un selecteur de couleur natif. */
+const PALETTE = [
+  '#F2A65A', '#5BC0EB', '#E86A92', '#8FD694',
+  '#C792EA', '#F4D35E', '#7FDBDA', '#E8825A',
+];
+
+export function EquipeScreen(props: Props) {
+  const data = props.race.data!;
+  const { now } = props;
   const { team, runners, legs } = data;
   const [tab, setTab] = useState<'bilan' | 'reglages'>('bilan');
 
@@ -85,14 +98,7 @@ export function EquipeScreen({ race, now, offset, setOffset, code, wakeLockHeld 
           })}
         </div>
       ) : (
-        <Settings
-          race={race}
-          now={now}
-          offset={offset}
-          setOffset={setOffset}
-          code={code}
-          wakeLockHeld={wakeLockHeld}
-        />
+        <Settings {...props} />
       )}
     </div>
   );
@@ -100,7 +106,10 @@ export function EquipeScreen({ race, now, offset, setOffset, code, wakeLockHeld 
 
 /* -------------------------------- reglages -------------------------------- */
 
-function Settings({ race, now, offset, setOffset, code, wakeLockHeld }: Omit<Props, 'now'> & { now: number }) {
+function Settings({
+  race, now, offset, setOffset, code,
+  wakeLockOn, setWakeLockOn, wakeLockHeld, skew, meId, setMeId,
+}: Props) {
   const data = race.data!;
   const { team, runners } = data;
   const roster = activeRunners(runners);
@@ -136,12 +145,10 @@ function Settings({ race, now, offset, setOffset, code, wakeLockHeld }: Omit<Pro
         <div className="mt-2">
           {sorted.map((r, i) => (
             <div key={r.id} className="flex items-center gap-2 border-b border-line py-2.5 last:border-b-0">
-              <input
-                type="color"
+              <ColorSwatch
                 value={r.color}
-                aria-label={`Couleur de ${r.name}`}
-                onChange={(e) => patch(r.id, { color: e.target.value })}
-                className="h-8 w-8 flex-none rounded-lg border border-line bg-raised"
+                name={r.name}
+                onChange={(color) => patch(r.id, { color })}
               />
               <input
                 type="text"
@@ -189,9 +196,18 @@ function Settings({ race, now, offset, setOffset, code, wakeLockHeld }: Omit<Pro
         )}
       </section>
 
+      <AddRunnerForm race={race} used={draft.map((r) => r.color)} />
+
+      <IdentitySettings runners={roster} meId={meId} setMeId={setMeId} />
+
       <RaceSettings race={race} />
 
-      <PhaseSettings race={race} phases={team.phases} />
+      <details className="card">
+        <summary className="eyebrow cursor-pointer list-none">
+          Avancé · phases de la rotation
+        </summary>
+        <PhaseSettings race={race} phases={team.phases} />
+      </details>
 
       <section className="card">
         <div className="eyebrow">Mode test</div>
@@ -223,14 +239,173 @@ function Settings({ race, now, offset, setOffset, code, wakeLockHeld }: Omit<Pro
           <Row k="Équipe" v={team.name} />
           <Row k="Code d’accès" v={code} mono />
           <Row k="Boucle" v={`${team.loopKm} km`} mono />
-          <Row k="Écran maintenu allumé" v={wakeLockHeld ? 'oui' : 'non disponible'} />
           <Row k="Temps réel" v={race.live ? 'connecté' : 'reconnexion…'} />
+          <Row
+            k="Écart d’horloge"
+            v={Math.abs(skew) < 1000 ? 'aligné' : `${skew > 0 ? '+' : ''}${(skew / 1000).toFixed(1)} s`}
+            mono
+          />
         </dl>
+
+        <label className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-raised px-3 py-3">
+          <input
+            type="checkbox"
+            checked={wakeLockOn}
+            onChange={(e) => setWakeLockOn(e.target.checked)}
+            className="h-5 w-5 flex-none accent-[#5BC0EB]"
+          />
+          <span className="min-w-0 flex-1 text-[13px]">
+            Garder l’écran allumé
+            <span className="mt-0.5 block text-[11px] text-muted">
+              À activer sur le téléphone posé en zone relais. Ailleurs, c’est de
+              la batterie en moins.
+              {wakeLockOn && !wakeLockHeld && ' Refusé par ce navigateur.'}
+            </span>
+          </span>
+        </label>
         <button type="button" className="ghost mt-3" onClick={race.refresh}>
           Recharger depuis le serveur
         </button>
       </section>
     </div>
+  );
+}
+
+/** Pastille de couleur : huit choix, un seul appui, pas de pipette. */
+function ColorSwatch({
+  value,
+  name,
+  onChange,
+}: {
+  value: string;
+  name: string;
+  onChange: (color: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative flex-none">
+      <button
+        type="button"
+        aria-label={`Couleur de ${name}`}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="h-9 w-9 rounded-lg border border-line"
+        style={{ background: value }}
+      />
+      {open && (
+        <div className="absolute left-0 top-11 z-10 grid grid-cols-4 gap-1.5 rounded-xl border border-line bg-surface p-2 shadow-xl">
+          {PALETTE.map((c) => (
+            <button
+              key={c}
+              type="button"
+              aria-label={`Choisir ${c}`}
+              onClick={() => {
+                onChange(c);
+                setOpen(false);
+              }}
+              className={`h-8 w-8 rounded-lg border ${c === value ? 'border-ink' : 'border-line'}`}
+              style={{ background: c }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Un cinquieme larron peut se greffer : l'ajout n'est plus du code mort. */
+function AddRunnerForm({ race, used }: { race: UseRace; used: string[] }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const free = PALETTE.find((c) => !used.includes(c)) ?? PALETTE[0]!;
+  const [color, setColor] = useState(free);
+
+  if (!open) {
+    return (
+      <button type="button" className="ghost" onClick={() => setOpen(true)}>
+        Ajouter un coureur
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="card space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const clean = name.trim();
+        if (!clean) return;
+        race.addRunner({ name: clean, color });
+        setName('');
+        setOpen(false);
+      }}
+    >
+      <div className="eyebrow">Nouveau coureur</div>
+      <div className="flex items-center gap-2">
+        <ColorSwatch value={color} name="le nouveau coureur" onChange={setColor} />
+        <input
+          className="field flex-1"
+          aria-label="Nom du nouveau coureur"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Prénom"
+          autoFocus
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className="ghost" onClick={() => setOpen(false)}>
+          Annuler
+        </button>
+        <button
+          type="submit"
+          disabled={name.trim() === ''}
+          className="rounded-xl bg-ink px-4 py-3 text-sm font-semibold text-bg disabled:bg-raised disabled:text-dim"
+        >
+          Ajouter
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Qui tient ce telephone — sert au compte a rebours personnel. */
+function IdentitySettings({
+  runners,
+  meId,
+  setMeId,
+}: {
+  runners: Runner[];
+  meId: string | null;
+  setMeId: (id: string) => void;
+}) {
+  return (
+    <section className="card">
+      <div className="eyebrow">Ce téléphone</div>
+      <p className="mt-1 text-[11px] text-muted">
+        Affiche « tu repars dans… » en haut de l’écran Course.
+      </p>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        {runners.map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => setMeId(r.id)}
+            aria-pressed={meId === r.id}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${
+              meId === r.id ? 'border-ink' : 'border-line bg-raised'
+            }`}
+          >
+            <span
+              className="h-3 w-3 flex-none rounded-full"
+              style={{ background: r.color }}
+              aria-hidden
+            />
+            {r.name}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -300,9 +475,7 @@ function PhaseSettings({ race, phases }: { race: UseRace; phases: Phase[] }) {
   };
 
   return (
-    <section className="card">
-      <div className="eyebrow">Phases</div>
-      <div className="mt-2 space-y-3">
+    <div className="mt-3 space-y-3">
         {draft.map((p) => (
           <div key={p.id} className="border-b border-line pb-3 last:border-b-0 last:pb-0">
             <div className="flex items-baseline justify-between">
@@ -339,20 +512,19 @@ function PhaseSettings({ race, phases }: { race: UseRace; phases: Phase[] }) {
             </div>
           </div>
         ))}
-        {dirty && (
-          <button
-            type="button"
-            className="w-full rounded-xl bg-ink px-4 py-3 text-sm font-semibold text-bg"
-            onClick={() => {
-              race.saveTeam({ phases: draft });
-              setDirty(false);
-            }}
-          >
-            Enregistrer les phases
-          </button>
-        )}
-      </div>
-    </section>
+      {dirty && (
+        <button
+          type="button"
+          className="w-full rounded-xl bg-ink px-4 py-3 text-sm font-semibold text-bg"
+          onClick={() => {
+            race.saveTeam({ phases: draft });
+            setDirty(false);
+          }}
+        >
+          Enregistrer les phases
+        </button>
+      )}
+    </div>
   );
 }
 

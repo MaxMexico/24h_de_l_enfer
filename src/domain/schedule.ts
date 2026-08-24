@@ -200,8 +200,11 @@ export const computeTotals = (
   const upcoming = schedule.filter((e) => e.status === 'planned');
 
   return activeRunners(runners).map((r) => {
-    const done = real.filter((l) => l.runnerId === r.id && l.endedAt !== null);
-    const km = done.reduce((a, l) => a + l.loops * loopKm, 0);
+    const mine = real.filter((l) => l.runnerId === r.id);
+    const done = mine.filter((l) => l.endedAt !== null);
+    // Les kilometres incluent le relais en cours ; le compteur de relais
+    // ne compte que ceux qui sont termines.
+    const km = mine.reduce((a, l) => a + l.loops * loopKm, 0);
     const projected = upcoming
       .filter((e) => e.runnerId === r.id)
       .reduce((a, e) => a + e.loops * loopKm, 0);
@@ -217,23 +220,10 @@ export const computeTotals = (
   });
 };
 
-/** Kilometres valides par l'equipe (relais termines uniquement). */
-export const teamKm = (legs: Leg[], loopKm: number): number =>
-  liveLegs(legs)
-    .filter((l) => l.endedAt !== null)
-    .reduce((a, l) => a + l.loops * loopKm, 0);
-
 /**
- * Boucles estimees du relais en cours. Sert uniquement a l'affichage :
- * ces boucles ne sont comptees dans le total qu'une fois le relais ferme.
+ * Kilometres de l'equipe. Les boucles du relais en cours comptent des
+ * qu'elles ont ete pointees : une boucle bouclee est bouclee, il n'y a
+ * pas de raison d'attendre la fin du relais pour l'afficher.
  */
-export const estimatedLiveLoops = (
-  leg: Leg,
-  now: number,
-  loopKm: number,
-  paceSec: number,
-): number => {
-  const perLoopSec = loopKm * paceSec;
-  if (perLoopSec <= 0) return 0;
-  return Math.floor((now - leg.startedAt) / 1000 / perLoopSec);
-};
+export const teamKm = (legs: Leg[], loopKm: number): number =>
+  liveLegs(legs).reduce((a, l) => a + l.loops * loopKm, 0);

@@ -4,8 +4,10 @@ import { mkdirSync } from 'node:fs';
 const SHOTS = new URL('../screenshots/', import.meta.url).pathname;
 const BASE = 'http://127.0.0.1:4173/24h_de_l_enfer/';
 
-// Depart fictif : il y a 3 h, pour montrer une course en cours.
-const START = new Date(Date.now() - 3 * 3600_000);
+// Depart fictif : il y a 3 h pour une course en cours, 25 h avec
+// FINISHED=1 pour verifier le bilan de fin.
+const FINISHED = process.env.FINISHED === '1';
+const START = new Date(Date.now() - (FINISHED ? 25 : 3) * 3600_000);
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const R = {
   v: '22222222-2222-4222-8222-222222222221',
@@ -37,7 +39,7 @@ const runners = [
 const legs = [];
 let t = START.getTime();
 const order = [R.v, R.b, R.s, R.q];
-for (let i = 0; i < 8; i += 1) {
+for (let i = 0; i < (FINISHED ? 60 : 8); i += 1) {
   const dur = (20 + (i % 3)) * 60_000;
   legs.push({
     id: `33333333-3333-4333-8333-${String(i).padStart(12, '0')}`,
@@ -49,7 +51,7 @@ for (let i = 0; i < 8; i += 1) {
   });
   t += dur;
 }
-legs.push({
+if (!FINISHED) legs.push({
   id: '33333333-3333-4333-8333-000000000008',
   team_id: TEAM_ID, runner_id: order[8 % 4],
   started_at: new Date(t).toISOString(), ended_at: null,
@@ -86,7 +88,8 @@ const shot = async (name) => {
   console.log('  ->', name);
 };
 
-await shot('1-course');
+await shot(FINISHED ? '8-bilan' : '1-course');
+if (FINISHED) { await page.mouse.wheel(0, 1400); await page.waitForTimeout(400); await shot('8-bilan'); }
 console.log('En piste :', await page.locator('.disp').last().textContent());
 
 await page.getByRole('button', { name: 'Rotation' }).click();

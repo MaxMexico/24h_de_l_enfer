@@ -28,9 +28,9 @@ groupe. Pour le changer, voir « Changer le code d'accès » plus bas.
 
 | Écran        | À quoi il sert |
 |--------------|----------------|
-| **Course**   | Bouton Relais plein écran, coureur en piste, chrono du relais, heure de passage estimée, coureur suivant, annulation du dernier relais, total équipe. |
+| **Course**   | Bouton Relais plein écran, **« tu repars dans… »** pour celui qui tient le téléphone, coureur en piste, chrono, **compteur de boucles**, coureur suivant, annulation du dernier relais, total équipe. À l’arrivée, le bilan de la course. |
 | **Rotation** | Timeline complète par phase — passés, en cours, à venir. Correction des boucles au stepper, suppression, ajout d'un relais oublié. |
-| **Équipe**   | Par coureur : km, relais, allure moyenne, projection, **heure de reprise**. Onglet Réglages : coureurs, ordre, départ, boucle, allure de référence, phases, mode test. |
+| **Équipe**   | Par coureur : km, relais, allure moyenne, projection, **heure de reprise**. Onglet Réglages : coureurs, ordre, ajout d’un coureur, identité du téléphone, départ, boucle, allure de référence, verrou d’écran, phases (replié), mode test. |
 
 ### Rotation par défaut
 
@@ -61,7 +61,7 @@ npm run dev
 Puis ouvrir `http://localhost:5173/24h_de_l_enfer/#/t/fousdubus-a7f3`.
 
 ```bash
-npm test          # moteur de planning + mutations optimistes (33 tests)
+npm test          # moteur de planning + file d'envoi (42 tests)
 npm run typecheck
 npm run build
 ```
@@ -143,6 +143,9 @@ simultanés sans jamais afficher d'erreur :
   l'état a déjà avancé — quelqu'un a enregistré le passage une seconde plus
   tôt — l'appel ne fait rien et renvoie l'état à jour. Pas de relais fantôme,
   pas de message d'échec.
+- `undo_last_leg` reçoit de même **l'id du relais à annuler**. Rejouée, ou
+  lancée depuis deux téléphones à la fois, l'annulation ne mange jamais un
+  deuxième relais.
 - Le même `p_leg_id` rejoué est un no-op.
 
 ### RLS
@@ -209,6 +212,29 @@ l'interface ne bloque jamais sur une requête.
    Jamais un simple spinner : on doit savoir si ce qu'on vient de saisir est
    parti.
 
+### La file d'envoi survit à la fermeture de l'app
+
+Les opérations en attente sont écrites dans le `localStorage` et rejouées au
+démarrage. Ce n'est pas du confort : Safari mobile tue volontiers un onglet en
+arrière-plan, et sur 24 h ça finit par arriver. Sans ça, un relais saisi juste
+avant que l'onglet soit tué disparaîtrait sans un mot.
+
+C'est ce qui impose que **toute opération soit rejouable sans effet de bord** :
+les identifiants sont générés avant l'envoi, les valeurs sont absolues (« mets
+3 boucles ») et jamais relatives (« ajoute une boucle »), et `undo_last_leg`
+désigne le relais à annuler plutôt que « le dernier ».
+
+### Les quatre téléphones sont d'accord sur l'heure
+
+L'app mesure au chargement l'écart entre son horloge et celle du serveur
+(en-tête HTTP `Date`) et corrige l'heure d'appui de cet écart. Sans ça, un
+téléphone qui retarde de trois minutes décale ses relais et fausse les allures
+calculées pour tout le monde.
+
+Laisser Postgres poser `now()` serait plus simple mais faux : en cas de relance
+après échec, on enregistrerait l'heure de la relance et non celle de l'appui.
+L'écart mesuré est visible dans Équipe → Réglages → Session.
+
 L'application optimiste rejoue **exactement** la logique de `record_relay` côté
 client (`applyRelay` dans `src/state/useRace.ts`), pour que ce qui s'affiche
 corresponde à ce que la base finira par contenir.
@@ -241,9 +267,19 @@ Le jour J, si l'app ne charge plus ou refuse d'enregistrer :
 
 Vérifier l'état du service sur <https://status.supabase.com>.
 
-**Note d'exploitation** : l'app tourne 24 h avec le wake lock actif. Prévoir
-batterie externe et câble en zone relais, et ne pas compter sur un seul
-téléphone comme unique source de vérité — les 4 doivent pouvoir enregistrer.
+**Note d'exploitation** : le verrou d'écran (« garder l'écran allumé ») est
+**désactivé par défaut** et se règle par téléphone dans Équipe → Réglages. À
+n'activer que sur le téléphone posé en zone relais : ailleurs, c'est de la
+batterie brûlée pour quelqu'un qui dort. Prévoir batterie externe et câble en
+zone relais, et ne pas compter sur un seul téléphone comme unique source de
+vérité — les 4 doivent pouvoir enregistrer.
+
+**Comptage des boucles** : le compteur `− N +` sur l'écran Course sert à
+pointer chaque passage du coureur en piste. Tant que personne ne pointe, le
+relais est fermé avec le nombre de boucles *prévu* par la phase ; dès qu'une
+boucle est pointée, c'est le comptage réel qui fait foi. Attention, ce total
+est celui de l'équipe : le classement officiel vient du chronométrage de
+l'organisateur et les deux divergeront un peu.
 
 ---
 
@@ -260,17 +296,21 @@ les lignes une à une.
 ### Tests d'acceptation
 
 ```bash
-npm test                       # 33 tests : planning, allures, mutations
+npm test                       # 42 tests : planning, allures, file d'envoi
 ```
 
-`scripts/acceptance.sql` rejoue les 20 tests de la couche d'accès directement en
+`scripts/acceptance.sql` rejoue les 23 tests de la couche d'accès directement en
 base (RLS, cloisonnement entre équipes, concurrence, idempotence, annulation) —
 à coller dans le SQL editor Supabase. Le script refuse de tourner si la course
 contient déjà des relais, et nettoie ce qu'il a créé.
 
-`scripts/smoke.mjs` et `scripts/resilience.mjs` pilotent l'app dans un vrai
-navigateur avec Supabase bouchonné : rendu des trois écrans, réactivité du
-bouton, bandeau de relance, non-duplication.
+Trois scripts pilotent l'app dans un vrai navigateur avec Supabase bouchonné :
+
+| Script | Ce qu'il vérifie |
+|---|---|
+| `smoke.mjs` | Rendu des trois écrans. `FINISHED=1` affiche le bilan de fin. |
+| `resilience.mjs` | Réactivité du bouton, bandeau de relance, non-duplication. |
+| `persistence.mjs` | Identité du téléphone, compteur de boucles, et **survie d'un relais à un rechargement** avec le réseau toujours en échec. |
 
 ```bash
 npx playwright install chromium     # une seule fois
