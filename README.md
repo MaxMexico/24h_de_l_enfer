@@ -55,16 +55,30 @@ Il ne tiendra pas. Trois niveaux de correction, du plus ponctuel au plus durable
 | Ce qu'on veut | Où |
 |---|---|
 | « Le prochain, c'est Quentin, et il ne fait que 2 boucles » | Course → **Changer le prochain relais** |
+| « Je prépare les 6 prochains relais pour la nuit » | Rotation → **Planifier ce relais** |
 | « Ce relais-ci en fera 4 finalement » | Course → *Ajuster ce que doit faire ce relais* |
 | « On s'est trompé, c'était Soulard qui courait » | Rotation → *Changer le coureur* |
 | « Il a bouclé 2 fois, pas 3 » | Rotation → stepper `− +` |
 | « À partir de maintenant, 2 boucles par relais » | Équipe → Réglages → phases |
-| « On change l'ordre de passage pour la suite » | Équipe → Réglages → flèches ↑↓ |
+| « On change l'ordre de passage pour la suite » | Équipe → Réglages → poignée ⠿ ou flèches ↑↓ |
 
-La consigne du prochain relais est posée sur l'équipe : **les 4 téléphones la
-voient**, et elle est consommée dès que le relais démarre — elle ne vaut que
-pour un passage. Le bouton Relais prend la couleur du coureur imposé, ce qui
-suffit à voir d'un coup d'œil que la rotation normale est court-circuitée.
+Les consignes forment une **file** posée sur l'équipe : **les 4 téléphones la
+voient**, et chaque relais qui démarre en consomme une. On peut donc préparer
+les 8 prochains relais — coureur, nombre de boucles, ou les deux — et laisser
+des trous, une entrée vide laissant jouer la rotation normale.
+
+Le bouton Relais prend la couleur du coureur imposé, et les créneaux qui
+portent une consigne sont marqués « imposé » dans la timeline : la déviation
+se voit d'un coup d'œil.
+
+Deux limites à connaître :
+
+- La file est **positionnelle**, pas rattachée à des créneaux précis — les
+  créneaux à venir n'existent pas en base, ils sont recalculés en continu.
+  Annuler un relais ne remet donc pas la consigne consommée dans la file.
+- Au-delà de 8 relais, plus rien n'est planifiable : le planning aura bougé
+  d'ici là, et l'éditer donnerait l'illusion d'une précision qu'il n'a pas.
+  Pour un changement durable, ce sont les phases et l'ordre de passage.
 
 Un relais porte donc deux nombres distincts : `loops`, ce qui a réellement été
 bouclé, et `planned_loops`, la cible. Sans cible explicite on suit le plan de
@@ -131,7 +145,7 @@ heures de réveil sont **dérivés côté client**, rien n'est précalculé en b
 
 ```
 teams   — nom, access_code, départ, longueur de boucle, phases (jsonb),
-          consigne pour le prochain relais (next_runner_id, next_loops)
+          plan (jsonb) : file de consignes, une par relais à venir
 runners — nom, ordre de passage, couleur, actif
 legs    — relais : coureur, début, fin (null = en cours),
           loops (réellement bouclé), planned_loops (cible), note
@@ -320,10 +334,10 @@ les lignes une à une.
 ### Tests d'acceptation
 
 ```bash
-npm test                       # 49 tests : planning, allures, file d'envoi, consignes
+npm test                       # 57 tests : planning, allures, file d'envoi, consignes
 ```
 
-`scripts/acceptance.sql` rejoue les 27 tests de la couche d'accès directement en
+`scripts/acceptance.sql` rejoue les 29 tests de la couche d'accès directement en
 base (RLS, cloisonnement entre équipes, concurrence, idempotence, annulation) —
 à coller dans le SQL editor Supabase. Le script refuse de tourner si la course
 contient déjà des relais, et nettoie ce qu'il a créé.
@@ -336,6 +350,7 @@ Trois scripts pilotent l'app dans un vrai navigateur avec Supabase bouchonné :
 | `resilience.mjs` | Réactivité du bouton, bandeau de relance, non-duplication. |
 | `persistence.mjs` | Identité du téléphone, compteur de boucles, et **survie d'un relais à un rechargement** avec le réseau toujours en échec. |
 | `override.mjs` | Consigne pour le prochain relais : coureur et boucles imposés, appliqués puis effacés, et correction du coureur d'un relais passé. |
+| `plan-dnd.mjs` | Planification de plusieurs relais d'avance, et réordonnancement des coureurs au glisser-déposer. |
 
 ```bash
 npx playwright install chromium     # une seule fois

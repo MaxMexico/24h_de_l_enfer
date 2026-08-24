@@ -19,8 +19,7 @@ const TEAM: Team = {
   loopKm: 1.41,
   refPaceSec: 360,
   raceMinutes: 1440,
-  nextRunnerId: null,
-  nextLoops: null,
+  plan: [],
   phases: [
     { id: 'jour', label: 'Jour', from: 0, to: 720, mode: 'loops', loops: 3 },
     { id: 'nuit', label: 'Nuit', from: 720, to: 1200, mode: 'time', minutes: 60 },
@@ -220,35 +219,63 @@ describe('totaux', () => {
   });
 });
 
-describe('consigne pour le prochain relais', () => {
+const entry = (runnerId: string | null, loops: number | null) => ({ runnerId, loops });
+
+describe('file de consignes', () => {
   it('impose le coureur du prochain créneau', () => {
-    const team: Team = { ...TEAM, nextRunnerId: 'q' };
+    const team: Team = { ...TEAM, plan: [entry('q', null)] };
     const legs = [leg({ id: '1', runnerId: 'v', startedAt: START })];
     const s = computeSchedule({ team, runners: RUNNERS, legs, now: START + 5 * MIN });
-    const next = s.find((e) => e.status === 'planned');
     // Sans consigne ce serait Brunet.
-    expect(next!.runnerId).toBe('q');
+    expect(s.find((e) => e.status === 'planned')!.runnerId).toBe('q');
   });
 
   it('impose le nombre de boucles du prochain créneau', () => {
-    const team: Team = { ...TEAM, nextLoops: 1 };
+    const team: Team = { ...TEAM, plan: [entry(null, 1)] };
     const s = computeSchedule({ team, runners: RUNNERS, legs: [], now: START });
     expect(s[0]!.loops).toBe(1);
-    // Un seul créneau est concerné : le suivant reprend le plan de la phase.
     expect(s[1]!.loops).toBe(3);
   });
 
   it('raccourcit la durée du créneau imposé', () => {
-    const team: Team = { ...TEAM, nextLoops: 1 };
+    const team: Team = { ...TEAM, plan: [entry(null, 1)] };
     const s = computeSchedule({ team, runners: RUNNERS, legs: [], now: START });
     expect(s[0]!.endMin - s[0]!.startMin).toBeCloseTo((1 * 1.41 * 360) / 60, 5);
   });
 
   it('ignore une consigne qui désigne un coureur inactif', () => {
     const runners = RUNNERS.map((r) => (r.id === 'q' ? { ...r, active: false } : r));
-    const team: Team = { ...TEAM, nextRunnerId: 'q' };
+    const team: Team = { ...TEAM, plan: [entry('q', null)] };
     const s = computeSchedule({ team, runners, legs: [], now: START });
     expect(s[0]!.runnerId).toBe('v');
+  });
+
+  it('planifie plusieurs relais d affilée', () => {
+    const team: Team = {
+      ...TEAM,
+      plan: [entry('q', 2), entry(null, null), entry('s', 1)],
+    };
+    const s = computeSchedule({ team, runners: RUNNERS, legs: [], now: START });
+    expect(s[0]!.runnerId).toBe('q');
+    expect(s[0]!.loops).toBe(2);
+    // Entrée vide : la rotation reprend après Quentin, donc Victor.
+    expect(s[1]!.runnerId).toBe('v');
+    expect(s[1]!.loops).toBe(3);
+    expect(s[2]!.runnerId).toBe('s');
+    expect(s[2]!.loops).toBe(1);
+  });
+
+  it('reprend la rotation normale une fois la file épuisée', () => {
+    const team: Team = { ...TEAM, plan: [entry('q', null)] };
+    const s = computeSchedule({ team, runners: RUNNERS, legs: [], now: START });
+    expect(s[0]!.runnerId).toBe('q');
+    expect(s[1]!.runnerId).toBe('v');
+    expect(s[2]!.runnerId).toBe('b');
+  });
+
+  it('ne touche à rien avec une file vide', () => {
+    const s = computeSchedule({ team: TEAM, runners: RUNNERS, legs: [], now: START });
+    expect(s.slice(0, 4).map((e) => e.runnerId)).toEqual(['v', 'b', 's', 'q']);
   });
 });
 

@@ -19,7 +19,7 @@ const R = {
 const team = [{
   id: TEAM_ID, name: 'Les Fous du Bus',
   race_start: START.toISOString(), loop_km: 1.41, ref_pace_sec: 360,
-  race_minutes: 1440, next_runner_id: null, next_loops: null,
+  race_minutes: 1440, plan: [],
   phases: [
     { id: 'jour', label: 'Jour', from: 0, to: 720, mode: 'loops', loops: 3 },
     { id: 'nuit', label: 'Nuit', from: 720, to: 1200, mode: 'time', minutes: 60 },

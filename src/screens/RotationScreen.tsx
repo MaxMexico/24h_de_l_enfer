@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { PlanEntryEditor } from '../components/PlanEntryEditor';
+import { isEmptyEntry } from '../domain/plan';
 import { activeRunners, computeSchedule } from '../domain/schedule';
 import type { Phase, Runner, ScheduleEntry } from '../domain/types';
 import { fmtClock, fmtKm, fmtPace } from '../lib/time';
@@ -8,6 +10,9 @@ interface Props {
   race: UseRace;
   now: number;
 }
+
+/** Nombre de relais a venir qu'on accepte de planifier. */
+const PLAN_HORIZON = 8;
 
 const phaseLabel = (p: Phase): string =>
   p.mode === 'loops' ? `${p.loops} boucles` : `blocs de ${p.minutes} min`;
@@ -30,10 +35,24 @@ export function RotationScreen({ race, now }: Props) {
   // Les creneaux commences avant le depart officiel n'entrent dans aucune phase.
   const early = schedule.filter((e) => e.startMin < (team.phases[0]?.from ?? 0));
 
+  // Rang de chaque creneau a venir : c'est l'index dans la file de consignes.
+  const planIndexOf = useMemo(() => {
+    const map = new Map<string, number>();
+    let i = 0;
+    for (const e of schedule) {
+      if (e.status === 'planned') {
+        map.set(e.id, i);
+        i += 1;
+      }
+    }
+    return map;
+  }, [schedule]);
+
   return (
     <div className="px-4 pb-6 pt-3">
       {early.length > 0 && (
-        <Section title="Avant le départ" rows={early} race={race} team={team} runners={runners} />
+        <Section title="Avant le départ" rows={early} race={race} team={team}
+                 runners={runners} planIndexOf={planIndexOf} />
       )}
 
       {byPhase.map(({ phase, rows }) =>
@@ -45,6 +64,7 @@ export function RotationScreen({ race, now }: Props) {
             race={race}
             team={team}
             runners={runners}
+            planIndexOf={planIndexOf}
           />
         ),
       )}
@@ -64,8 +84,10 @@ export function RotationScreen({ race, now }: Props) {
       )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-dim">
-        Les relais passés sont ajustables : le stepper corrige les boucles réellement bouclées.
-        Les créneaux à venir sont recalculés en continu sur l’allure réelle de chacun.
+        Les relais passés sont ajustables : le stepper corrige les boucles réellement
+        bouclées. Les {PLAN_HORIZON} prochains créneaux sont planifiables — coureur et
+        boucles — et les consignes sont consommées l’une après l’autre. Au-delà, les
+        créneaux sont recalculés en continu sur l’allure réelle de chacun.
       </p>
     </div>
   );
@@ -77,9 +99,10 @@ interface SectionProps {
   race: UseRace;
   team: UseRace['data'] extends null ? never : NonNullable<UseRace['data']>['team'];
   runners: NonNullable<UseRace['data']>['runners'];
+  planIndexOf: Map<string, number>;
 }
 
-function Section({ title, rows, race, team, runners }: SectionProps) {
+function Section({ title, rows, race, team, runners, planIndexOf }: SectionProps) {
   return (
     <section>
       <h2 className="my-4 flex items-center gap-2.5 text-[10px] uppercase tracking-[0.18em] text-muted">
@@ -88,7 +111,14 @@ function Section({ title, rows, race, team, runners }: SectionProps) {
       </h2>
       <div className="card px-4 py-1">
         {rows.map((e) => (
-          <LegRow key={e.id} entry={e} race={race} team={team} runners={runners} />
+          <LegRow
+            key={e.id}
+            entry={e}
+            race={race}
+            team={team}
+            runners={runners}
+            planIndex={planIndexOf.get(e.id)}
+          />
         ))}
       </div>
     </section>
@@ -105,23 +135,29 @@ function LegRow({
   race,
   team,
   runners,
+  planIndex,
 }: {
   entry: ScheduleEntry;
   race: UseRace;
   team: NonNullable<UseRace['data']>['team'];
   runners: Runner[];
+  planIndex: number | undefined;
 }) {
   const [editing, setEditing] = useState(false);
   const runner = runners.find((r) => r.id === entry.runnerId);
   const done = entry.status === 'done';
   const live = entry.status === 'live';
-  const editable = done || live;
+  // Au-dela d'une poignee de relais, le planning aura bouge : le laisser
+  // editer donnerait l'illusion d'une precision qu'il n'a pas.
+  const planned = planIndex !== undefined && planIndex < PLAN_HORIZON;
+  const editable = done || live || planned;
+  const forced = planIndex !== undefined && !isEmptyEntry(team.plan[planIndex]);
 
   return (
     <div
       className={`border-b border-line py-3 last:border-b-0
                   ${live ? '-ml-2.5 pl-2.5 shadow-[inset_2px_0_0_#E6EAF0]' : ''}
-                  ${entry.status === 'planned' ? 'opacity-40' : ''}`}
+                  ${entry.status === 'planned' && !forced ? 'opacity-40' : ''}`}
     >
       <div className="flex items-center gap-3">
         <div className="mono w-[46px] flex-none text-sm text-muted">
@@ -133,7 +169,14 @@ function LegRow({
           aria-hidden
         />
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-medium">{runner?.name ?? 'Coureur retiré'}</div>
+          <div className="flex items-center gap-2 text-[15px] font-medium">
+            {runner?.name ?? 'Coureur retiré'}
+            {forced && (
+              <span className="rounded border border-[#F2A65A]/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] text-[#F2A65A]">
+                imposé
+              </span>
+            )}
+          </div>
           <div className="mt-0.5 text-[11px] text-muted">
             {fmtKm(entry.loops * team.loopKm)} km
             {entry.actualPaceSec ? ` · ${fmtPace(entry.actualPaceSec)}/km` : ''}
@@ -171,11 +214,31 @@ function LegRow({
           onClick={() => setEditing((v) => !v)}
           aria-expanded={editing}
         >
-          {editing ? 'Fermer' : live ? 'Changer le coureur ou la cible' : 'Changer le coureur'}
+          {editing
+            ? 'Fermer'
+            : planned
+              ? 'Planifier ce relais'
+              : live
+                ? 'Changer le coureur ou la cible'
+                : 'Changer le coureur'}
         </button>
       )}
 
-      {editing && (
+      {editing && planned && planIndex !== undefined && (
+        <div className="ml-[58px] mt-2">
+          <PlanEntryEditor
+            plan={team.plan}
+            index={planIndex}
+            roster={activeRunners(runners)}
+            loopKm={team.loopKm}
+            defaultRunnerId={entry.runnerId}
+            defaultLoops={entry.loops}
+            onChange={race.setPlan}
+          />
+        </div>
+      )}
+
+      {editing && !planned && (
         <div className="ml-[58px] mt-2 rounded-xl border border-line bg-raised p-3">
           <div className="stat-k">Coureur</div>
           <div className="mt-1.5 grid grid-cols-2 gap-2">

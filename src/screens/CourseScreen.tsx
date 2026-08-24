@@ -186,8 +186,7 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
               entry={nextEntry}
               roster={roster}
               loopKm={team.loopKm}
-              forcedRunnerId={team.nextRunnerId}
-              forcedLoops={team.nextLoops}
+              plan={team.plan}
             />
           </>
         ) : (

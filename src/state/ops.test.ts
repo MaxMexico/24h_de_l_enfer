@@ -12,8 +12,7 @@ const TEAM: Team = {
   loopKm: 1.41,
   refPaceSec: 360,
   raceMinutes: 1440,
-  nextRunnerId: null,
-  nextLoops: null,
+  plan: [],
   phases: [{ id: 'jour', label: 'Jour', from: 0, to: 1440, mode: 'loops', loops: 3 }],
 };
 
@@ -200,5 +199,54 @@ describe('file d envoi persistee', () => {
   it('ignore un contenu corrompu', () => {
     globalThis.localStorage.setItem('fdb24:outbox:casse', '{pas du json');
     expect(loadOutbox('casse')).toEqual([]);
+  });
+});
+
+describe('file de consignes côté client', () => {
+  const withPlan = (plan: { runnerId: string | null; loops: number | null }[]): RaceData => ({
+    team: { ...TEAM, plan },
+    runners: RUNNERS,
+    legs: [],
+  });
+
+  it('applique la tête de file au départ', () => {
+    const d = applyOp(withPlan([{ runnerId: 'q', loops: 2 }]), relayOp('a', null, START));
+    expect(d.legs[0]!.runnerId).toBe('q');
+    expect(d.legs[0]!.plannedLoops).toBe(2);
+  });
+
+  it('consomme une seule entrée par relais', () => {
+    const d0 = withPlan([
+      { runnerId: 'q', loops: 2 },
+      { runnerId: 's', loops: 1 },
+    ]);
+    const d1 = applyOp(d0, relayOp('a', null, START));
+    expect(d1.team.plan).toHaveLength(1);
+    expect(d1.team.plan[0]!.runnerId).toBe('s');
+
+    const d2 = applyOp(d1, relayOp('b', 'a', START + 20 * MIN, 2));
+    expect(d2.legs[1]!.runnerId).toBe('s');
+    expect(d2.team.plan).toHaveLength(0);
+  });
+
+  it('ne consomme rien quand l appui est périmé', () => {
+    const d0 = withPlan([{ runnerId: 'q', loops: 2 }]);
+    const d1 = applyOp(d0, relayOp('a', null, START));
+    // Un autre téléphone croit encore qu un relais inexistant est ouvert.
+    const d2 = applyOp(d1, relayOp('c', 'inconnu', START + 20 * MIN, 3));
+    expect(d2.team.plan).toEqual(d1.team.plan);
+    expect(d2.legs).toHaveLength(1);
+  });
+
+  it('ignore une entrée qui désigne un coureur inconnu', () => {
+    const d = applyOp(withPlan([{ runnerId: 'fantome', loops: null }]), relayOp('a', null, START));
+    expect(d.legs[0]!.runnerId).toBe('v');
+  });
+
+  it('remplace la file entière via setPlan', () => {
+    const d = applyOp(withPlan([]), {
+      kind: 'setPlan', key: 'k', plan: [{ runnerId: 's', loops: 4 }],
+    });
+    expect(d.team.plan).toEqual([{ runnerId: 's', loops: 4 }]);
   });
 });

@@ -11,7 +11,7 @@ const R = ['22222222-2222-4222-8222-222222222221', '22222222-2222-4222-8222-2222
 const team = {
   id: TEAM_ID, name: 'Les Fous du Bus', race_start: START.toISOString(),
   loop_km: 1.41, ref_pace_sec: 360, race_minutes: 1440,
-  next_runner_id: null, next_loops: null,
+  plan: [],
   phases: [{ id: 'jour', label: 'Jour', from: 0, to: 720, mode: 'loops', loops: 3 },
            { id: 'nuit', label: 'Nuit', from: 720, to: 1200, mode: 'time', minutes: 60 },
            { id: 'finale', label: 'Finale', from: 1200, to: 1440, mode: 'loops', loops: 2 }],
@@ -43,9 +43,10 @@ await page.route('**/rest/v1/**', async (route) => {
   if (url.includes('/rpc/record_relay')) {
     const p = JSON.parse(req.postData() ?? '{}');
     // Le faux serveur applique la consigne, comme record_relay le fait.
-    const runnerId = team.next_runner_id ?? R[1];
-    const planned = team.next_loops;
-    team.next_runner_id = null; team.next_loops = null;
+    const head = team.plan[0] ?? {};
+    const runnerId = head.runnerId ?? R[1];
+    const planned = head.loops ?? null;
+    team.plan = team.plan.slice(1);
     legs[0] = { ...legs[0], ended_at: p.p_at, loops: p.p_closing_loops ?? 3 };
     legs.push({ id: p.p_leg_id, team_id: TEAM_ID, runner_id: runnerId, started_at: p.p_at,
       ended_at: null, loops: 0, planned_loops: planned, note: null, deleted_at: null,
@@ -87,9 +88,9 @@ const badge = await page.locator('main').getByText('imposé').count();
 console.log('2. Marque « imposé »   :', badge > 0 ? 'affichee' : '*** ABSENTE ***');
 
 // --- Reduire a 2 boucles ---
-await page.getByRole('button', { name: 'Une boucle de moins au prochain relais' }).click();
+await page.getByRole('button', { name: 'Une boucle de moins' }).click();
 await page.waitForTimeout(400);
-console.log('3. Boucles imposees    :', team.next_loops, team.next_loops === 2 ? '(2 boucles)' : '*** ATTENDU 2 ***');
+console.log('3. Boucles imposees    :', team.plan[0]?.loops, team.plan[0]?.loops === 2 ? '(2 boucles)' : '*** ATTENDU 2 ***');
 
 await page.screenshot({ path: `${SHOTS}/9-consigne.png` });
 
@@ -102,7 +103,7 @@ const target = await page.locator('main .mono.text-2xl').textContent();
 console.log('4. Compteur / cible    :', target?.trim(), target?.includes('/2') ? '(cible 2)' : '*** CIBLE PERDUE ***');
 
 // --- La consigne ne vaut qu'une fois ---
-console.log('5. Consigne restante   :', team.next_runner_id === null ? 'effacee' : '*** RESTANTE ***');
+console.log('5. Consigne restante   :', team.plan.length === 0 ? 'effacee' : '*** RESTANTE ***');
 console.log('5. Prochain suivant    :', (await nextLine())?.trim());
 
 // --- Changer le coureur d un relais passe, depuis Rotation ---

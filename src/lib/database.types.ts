@@ -124,9 +124,8 @@ export type Database = {
           id: string
           loop_km: number
           name: string
-          next_loops: number | null
-          next_runner_id: string | null
           phases: Json
+          plan: Json
           race_minutes: number
           race_start: string
           ref_pace_sec: number
@@ -150,9 +149,8 @@ export type Database = {
           id?: string
           loop_km?: number
           name?: string
-          next_loops?: number | null
-          next_runner_id?: string | null
           phases?: Json
+          plan?: Json
           race_minutes?: number
           race_start?: string
           ref_pace_sec?: number

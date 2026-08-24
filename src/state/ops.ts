@@ -1,5 +1,5 @@
 import { activeRunners, liveLegs, nextRunnerAfter } from '../domain/schedule';
-import type { Leg, Phase, Runner, Team } from '../domain/types';
+import type { Leg, Phase, PlanEntry, Runner, Team } from '../domain/types';
 import type { Json, TablesUpdate } from '../lib/database.types';
 import { toLeg } from '../lib/mappers';
 import type { Client } from '../lib/supabase';
@@ -51,12 +51,7 @@ export type Op =
   | { kind: 'addRunner'; key: string; runner: Runner }
   | { kind: 'setLegRunner'; key: string; legId: string; runnerId: string }
   | { kind: 'setPlannedLoops'; key: string; legId: string; loops: number | null }
-  | {
-      kind: 'setNextRelay';
-      key: string;
-      runnerId: string | null;
-      loops: number | null;
-    };
+  | { kind: 'setPlan'; key: string; plan: PlanEntry[] };
 
 export const openLegOf = (legs: Leg[]): Leg | null =>
   liveLegs(legs).find((l) => l.endedAt === null) ?? null;
@@ -75,9 +70,10 @@ const applyRelay = (
 
   const open = openLegOf(data.legs);
   const roster = activeRunners(data.runners);
-  // Consigne posee pour ce passage ; elle ne vaut qu'une fois.
-  const forced = roster.find((r) => r.id === data.team.nextRunnerId) ?? null;
-  const forcedLoops = data.team.nextLoops;
+  // Tete de la file de consignes ; elle ne vaut que pour ce passage.
+  const head = data.team.plan[0];
+  const forced = roster.find((r) => r.id === head?.runnerId) ?? null;
+  const forcedLoops = head?.loops ?? null;
   let legs = data.legs;
   let at = op.at;
   let runnerId: string | null;
@@ -101,7 +97,8 @@ const applyRelay = (
 
   return {
     ...data,
-    team: { ...data.team, nextRunnerId: null, nextLoops: null },
+    // Un relais ouvert consomme une entree de la file.
+    team: { ...data.team, plan: data.team.plan.slice(1) },
     legs: [
       ...legs,
       {
@@ -199,11 +196,8 @@ export const applyOp = (data: RaceData, op: Op): RaceData => {
           l.id === op.legId ? { ...l, plannedLoops: op.loops } : l,
         ),
       };
-    case 'setNextRelay':
-      return {
-        ...data,
-        team: { ...data.team, nextRunnerId: op.runnerId, nextLoops: op.loops },
-      };
+    case 'setPlan':
+      return { ...data, team: { ...data.team, plan: op.plan } };
     default:
       return data;
   }
@@ -308,10 +302,10 @@ export const runOp = async (
       if (error) throw error;
       return null;
     }
-    case 'setNextRelay': {
+    case 'setPlan': {
       const { error } = await client
         .from('teams')
-        .update({ next_runner_id: op.runnerId, next_loops: op.loops })
+        .update({ plan: op.plan as unknown as Json })
         .eq('id', teamId);
       if (error) throw error;
       return null;

@@ -23,9 +23,17 @@ export interface Team {
   refPaceSec: number;
   raceMinutes: number;
   phases: Phase[];
-  /** Consigne pour le prochain relais, posee par n'importe quel telephone. */
-  nextRunnerId: string | null;
-  nextLoops: number | null;
+  /**
+   * File de consignes, une par relais a venir. Consommee par le haut a
+   * chaque relais ouvert. Une entree vide laisse jouer le plan normal.
+   */
+  plan: PlanEntry[];
+}
+
+/** Consigne pour un relais a venir. Null = on suit le plan de la phase. */
+export interface PlanEntry {
+  runnerId: string | null;
+  loops: number | null;
 }
 
 export interface Runner {

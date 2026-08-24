@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ReorderList } from '../components/ReorderList';
 import { activeRunners, computeSchedule, computeTotals } from '../domain/schedule';
 import type { Phase, Runner } from '../domain/types';
 import { fmtClock, fmtKm, fmtPace, fmtShort } from '../lib/time';
@@ -116,20 +117,22 @@ function Settings({
   const [draft, setDraft] = useState<Runner[]>(runners);
   const [dirty, setDirty] = useState(false);
 
-  const move = (index: number, delta: number) => {
+  /**
+   * Deplace un coureur d'un rang a un autre. Les positions sont renumerotees
+   * de 1 a n : un echange de positions ne suffirait pas pour un deplacement
+   * de plusieurs rangs, comme en produit le glisser-deposer.
+   */
+  const moveTo = (from: number, to: number) => {
     const sorted = [...draft].sort((a, b) => a.position - b.position);
-    const target = index + delta;
-    if (target < 0 || target >= sorted.length) return;
-    const a = sorted[index]!;
-    const b = sorted[target]!;
-    const swapped = sorted.map((r) => {
-      if (r.id === a.id) return { ...r, position: b.position };
-      if (r.id === b.id) return { ...r, position: a.position };
-      return r;
-    });
-    setDraft(swapped);
+    if (from === to || to < 0 || to >= sorted.length) return;
+    const moved = sorted.splice(from, 1)[0];
+    if (!moved) return;
+    sorted.splice(to, 0, moved);
+    setDraft(sorted.map((r, i) => ({ ...r, position: i + 1 })));
     setDirty(true);
   };
+
+  const move = (index: number, delta: number) => moveTo(index, index + delta);
 
   const patch = (id: string, over: Partial<Runner>) => {
     setDraft((prev) => prev.map((r) => (r.id === id ? { ...r, ...over } : r)));
@@ -143,39 +146,55 @@ function Settings({
       <section className="card">
         <div className="eyebrow">Coureurs et ordre de passage</div>
         <div className="mt-2">
-          {sorted.map((r, i) => (
-            <div key={r.id} className="flex items-center gap-2 border-b border-line py-2.5 last:border-b-0">
-              <ColorSwatch
-                value={r.color}
-                name={r.name}
-                onChange={(color) => patch(r.id, { color })}
-              />
-              <input
-                type="text"
-                value={r.name}
-                aria-label={`Nom du coureur ${i + 1}`}
-                onChange={(e) => patch(r.id, { name: e.target.value })}
-                className="field flex-1"
-              />
-              <button type="button" aria-label={`Monter ${r.name}`} onClick={() => move(i, -1)}
-                      disabled={i === 0}
-                      className="h-9 w-9 flex-none rounded-lg border border-line bg-raised disabled:opacity-30">↑</button>
-              <button type="button" aria-label={`Descendre ${r.name}`} onClick={() => move(i, 1)}
-                      disabled={i === sorted.length - 1}
-                      className="h-9 w-9 flex-none rounded-lg border border-line bg-raised disabled:opacity-30">↓</button>
-              <button
-                type="button"
-                aria-label={r.active ? `Mettre ${r.name} en pause` : `Réintégrer ${r.name}`}
-                onClick={() => patch(r.id, { active: !r.active })}
-                className={`h-9 w-9 flex-none rounded-lg border text-xs ${
-                  r.active ? 'border-line bg-raised' : 'border-[#E86A92]/50 text-[#E86A92]'
-                }`}
-              >
-                {r.active ? '✓' : '·'}
-              </button>
-            </div>
-          ))}
+          <ReorderList
+            items={sorted}
+            keyOf={(r) => r.id}
+            labelOf={(r) => r.name}
+            onReorder={moveTo}
+          >
+            {(r, i, handle) => (
+              <div className="flex items-center gap-2 border-b border-line bg-surface py-2.5 last:border-b-0">
+                <span
+                  {...handle}
+                  className="h-9 w-6 flex-none select-none text-center text-lg leading-9 text-dim"
+                >
+                  ⠿
+                </span>
+                <ColorSwatch
+                  value={r.color}
+                  name={r.name}
+                  onChange={(color) => patch(r.id, { color })}
+                />
+                <input
+                  type="text"
+                  value={r.name}
+                  aria-label={`Nom du coureur ${i + 1}`}
+                  onChange={(e) => patch(r.id, { name: e.target.value })}
+                  className="field min-w-0 flex-1"
+                />
+                <button type="button" aria-label={`Monter ${r.name}`} onClick={() => move(i, -1)}
+                        disabled={i === 0}
+                        className="h-9 w-8 flex-none rounded-lg border border-line bg-raised disabled:opacity-30">↑</button>
+                <button type="button" aria-label={`Descendre ${r.name}`} onClick={() => move(i, 1)}
+                        disabled={i === sorted.length - 1}
+                        className="h-9 w-8 flex-none rounded-lg border border-line bg-raised disabled:opacity-30">↓</button>
+                <button
+                  type="button"
+                  aria-label={r.active ? `Mettre ${r.name} en pause` : `Réintégrer ${r.name}`}
+                  onClick={() => patch(r.id, { active: !r.active })}
+                  className={`h-9 w-8 flex-none rounded-lg border text-xs ${
+                    r.active ? 'border-line bg-raised' : 'border-[#E86A92]/50 text-[#E86A92]'
+                  }`}
+                >
+                  {r.active ? '✓' : '·'}
+                </button>
+              </div>
+            )}
+          </ReorderList>
         </div>
+        <p className="mt-2 text-[11px] text-dim">
+          Glisser la poignée pour réordonner, ou utiliser les flèches.
+        </p>
 
         {dirty && (
           <button

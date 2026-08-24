@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { activeRunners } from '../domain/schedule';
-import type { Runner, Team } from '../domain/types';
+import type { PlanEntry, Runner, Team } from '../domain/types';
 import { TEAM_COLUMNS, toLeg, toRunner, toTeam } from '../lib/mappers';
 import { clientFor, isConfigured, type Client } from '../lib/supabase';
 import { uuid } from '../lib/time';
@@ -43,8 +43,8 @@ export interface UseRace {
   setLegRunner: (legId: string, runnerId: string) => void;
   /** Cible de boucles d'un relais. Null = on suit le plan de la phase. */
   setPlannedLoops: (legId: string, loops: number | null) => void;
-  /** Consigne pour le prochain relais, partagee par les 4 telephones. */
-  setNextRelay: (runnerId: string | null, loops: number | null) => void;
+  /** File de consignes pour les relais a venir, partagee par les 4 telephones. */
+  setPlan: (plan: PlanEntry[]) => void;
   retry: () => void;
   refresh: () => void;
 }
@@ -205,21 +205,21 @@ export const useRace = (code: string): UseRace => {
             // record_relay consomme la consigne d'equipe mais ne renvoie que
             // les relais : sans ca, l'ecran continuerait d'afficher
             // « imposé » sur un prochain relais qui ne l'est plus.
-            const consumesOverride = op.kind === 'relay';
+            const consumesPlan = op.kind === 'relay';
             setServer((prev) =>
               prev
                 ? {
                     ...prev,
                     ...fresh,
-                    team: consumesOverride
-                      ? { ...prev.team, nextRunnerId: null, nextLoops: null }
+                    team: consumesPlan
+                      ? { ...prev.team, plan: prev.team.plan.slice(1) }
                       : prev.team,
                   }
                 : prev,
             );
             // La consigne n'est effacee en base que si le relais a bien ete
             // ouvert : on relit pour trancher.
-            if (consumesOverride) refresh();
+            if (consumesPlan) refresh();
           } else {
             refresh();
           }
@@ -375,14 +375,18 @@ export const useRace = (code: string): UseRace => {
     [enqueue],
   );
 
-  const setNextRelay = useCallback(
-    (runnerId: string | null, loops: number | null) => {
-      enqueue({
-        kind: 'setNextRelay',
-        key: uuid(),
-        runnerId,
-        loops: loops === null ? null : Math.max(1, loops),
-      });
+  const setPlan = useCallback(
+    (plan: PlanEntry[]) => {
+      // On ne garde pas de queue de consignes vides en fin de file.
+      const trimmed = [...plan];
+      while (
+        trimmed.length > 0 &&
+        trimmed[trimmed.length - 1]!.runnerId === null &&
+        trimmed[trimmed.length - 1]!.loops === null
+      ) {
+        trimmed.pop();
+      }
+      enqueue({ kind: 'setPlan', key: uuid(), plan: trimmed.slice(0, 64) });
     },
     [enqueue],
   );
@@ -406,7 +410,7 @@ export const useRace = (code: string): UseRace => {
     addRunner,
     setLegRunner,
     setPlannedLoops,
-    setNextRelay,
+    setPlan,
     retry,
     refresh,
   };
@@ -415,7 +419,7 @@ export const useRace = (code: string): UseRace => {
 /** Coureur qui prendra le relais apres celui en piste. */
 export const incomingRunner = (data: RaceData): Runner | null => {
   const roster = activeRunners(data.runners);
-  const forced = roster.find((r) => r.id === data.team.nextRunnerId);
+  const forced = roster.find((r) => r.id === data.team.plan[0]?.runnerId);
   if (forced) return forced;
 
   const open = openLegOf(data.legs);

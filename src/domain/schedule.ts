@@ -167,18 +167,18 @@ export const computeSchedule = ({
     nextRunner = nextRunnerAfter(roster, last.runnerId);
   }
 
-  // Le premier creneau a venir peut etre impose : « le prochain, c'est
-  // Quentin, et il ne fait que 2 boucles ».
-  const forced = roster.find((r) => r.id === team.nextRunnerId) ?? null;
-  if (forced !== null) nextRunner = forced;
-
   let guard = 0;
   while (cursorMin < raceMinutes && nextRunner !== null && guard < MAX_PROJECTED) {
     const phase = phaseAt(phases, cursorMin);
     if (phase === null) break;
 
+    // Consigne prevue pour ce creneau, si elle designe un coureur actif.
+    const entry = team.plan[guard];
+    const forcedRunner = roster.find((r) => r.id === entry?.runnerId) ?? null;
+    if (forcedRunner !== null) nextRunner = forcedRunner;
+
     const runnerPace = pace(nextRunner.id);
-    const forcedLoops = guard === 0 ? team.nextLoops : null;
+    const forcedLoops = entry?.loops ?? null;
     const loops = forcedLoops ?? plannedLoops(phase, loopKm, runnerPace);
     const dur =
       forcedLoops !== null && phase.mode === 'loops'

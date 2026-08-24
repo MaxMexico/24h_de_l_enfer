@@ -1,16 +1,16 @@
 import { useState } from 'react';
-import type { Runner, ScheduleEntry } from '../domain/types';
+import { isEmptyEntry } from '../domain/plan';
+import type { PlanEntry, Runner, ScheduleEntry } from '../domain/types';
 import { fmtClock, fmtKm } from '../lib/time';
 import type { UseRace } from '../state/useRace';
+import { PlanEntryEditor } from './PlanEntryEditor';
 
 interface Props {
   race: UseRace;
   entry: ScheduleEntry | undefined;
   roster: Runner[];
   loopKm: number;
-  /** Consigne actuellement posee sur l'equipe. */
-  forcedRunnerId: string | null;
-  forcedLoops: number | null;
+  plan: PlanEntry[];
 }
 
 /**
@@ -19,19 +19,12 @@ interface Props {
  * est posee sur l'equipe, donc les 4 telephones la voient, et elle est
  * consommee des que le relais demarre.
  */
-export function NextRelayPanel({
-  race,
-  entry,
-  roster,
-  loopKm,
-  forcedRunnerId,
-  forcedLoops,
-}: Props) {
+export function NextRelayPanel({ race, entry, roster, loopKm, plan }: Props) {
   const [open, setOpen] = useState(false);
   if (!entry) return null;
 
   const runner = roster.find((r) => r.id === entry.runnerId);
-  const forced = forcedRunnerId !== null || forcedLoops !== null;
+  const forced = !isEmptyEntry(plan[0]);
 
   return (
     <div className="mt-3.5 border-t border-line pt-3.5">
@@ -67,71 +60,19 @@ export function NextRelayPanel({
       </button>
 
       {open && (
-        <div className="mt-2.5 rounded-xl border border-line bg-raised p-3">
-          <div className="stat-k">Qui prend le relais</div>
-          <div className="mt-1.5 grid grid-cols-2 gap-2">
-            {roster.map((r) => {
-              const on = r.id === (forcedRunnerId ?? entry.runnerId);
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => race.setNextRelay(r.id, forcedLoops)}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm ${
-                    on ? 'border-ink' : 'border-line'
-                  }`}
-                >
-                  <span
-                    className="h-2.5 w-2.5 flex-none rounded-full"
-                    style={{ background: r.color }}
-                    aria-hidden
-                  />
-                  {r.name}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="stat-k mt-3">Boucles prévues</div>
-          <div className="mt-1.5 flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Une boucle de moins au prochain relais"
-              onClick={() => race.setNextRelay(forcedRunnerId, Math.max(1, entry.loops - 1))}
-              className="h-11 w-11 flex-none rounded-lg border border-line text-lg"
-            >
-              −
-            </button>
-            <div className="mono flex-1 text-center text-xl">
-              {entry.loops}
-              <span className="ml-1 text-[11px] text-muted">
-                {fmtKm(entry.loops * loopKm)} km
-              </span>
-            </div>
-            <button
-              type="button"
-              aria-label="Une boucle de plus au prochain relais"
-              onClick={() => race.setNextRelay(forcedRunnerId, entry.loops + 1)}
-              className="h-11 w-11 flex-none rounded-lg border border-line text-lg"
-            >
-              +
-            </button>
-          </div>
-
-          {forced && (
-            <button
-              type="button"
-              className="ghost mt-2.5"
-              onClick={() => race.setNextRelay(null, null)}
-            >
-              Revenir au plan
-            </button>
-          )}
-
+        <div className="mt-2.5">
+          <PlanEntryEditor
+            plan={plan}
+            index={0}
+            roster={roster}
+            loopKm={loopKm}
+            defaultRunnerId={entry.runnerId}
+            defaultLoops={entry.loops}
+            onChange={race.setPlan}
+          />
           <p className="mt-2 text-[11px] leading-relaxed text-dim">
-            Vaut pour le prochain relais seulement, sur les 4 téléphones. Pour
-            changer durablement, passer par Équipe → Réglages.
+            Vaut pour le prochain relais, sur les 4 téléphones. Pour préparer
+            plusieurs relais d’avance, voir l’écran Rotation.
           </p>
         </div>
       )}
