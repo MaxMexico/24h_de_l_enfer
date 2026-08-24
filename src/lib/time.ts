@@ -19,12 +19,34 @@ export const fmtDur = (sec: number): string => {
   return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${pad(m)}:${pad(s % 60)}`;
 };
 
-/** Duree lisible : « 3h05 » ou « 42 min ». */
+/**
+ * Duree lisible : « 4 j 13 h », « 3h05 » ou « 42 min ».
+ *
+ * Au-dela de deux jours on bascule en jours : la semaine qui precede la
+ * course, « 109h02 » ne se lit pas.
+ */
 export const fmtShort = (sec: number): string => {
   const s = Math.max(0, Math.floor(sec));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
+  // Format resserre : en chasse fixe, « 4 j 12 h » remplit tout l'anneau.
+  if (h >= 48) return `${Math.floor(h / 24)}j ${h % 24}h`;
   return h > 0 ? `${h}h${pad(m)}` : `${m} min`;
+};
+
+/**
+ * Heure du jour, prefixee du jour de la semaine quand ce n'est pas
+ * aujourd'hui : « 10:25 » ne dit pas lequel des cinq prochains matins.
+ */
+export const fmtClockDay = (ms: number, now: number): string => {
+  const d = new Date(ms);
+  const sameDay =
+    d.getFullYear() === new Date(now).getFullYear() &&
+    d.getMonth() === new Date(now).getMonth() &&
+    d.getDate() === new Date(now).getDate();
+  if (sameDay) return fmtClock(ms);
+  const jour = d.toLocaleDateString('fr-FR', { weekday: 'short' });
+  return `${jour} ${fmtClock(ms)}`;
 };
 
 /** Allure en min:sec par kilometre. */

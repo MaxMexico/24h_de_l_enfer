@@ -11,7 +11,7 @@ import {
   teamKm,
 } from '../domain/schedule';
 import type { Runner } from '../domain/types';
-import { fmtClock, fmtDur, fmtKm, fmtShort } from '../lib/time';
+import { fmtClock, fmtClockDay, fmtDur, fmtKm, fmtShort } from '../lib/time';
 import { incomingRunner, openLegOf, type UseRace } from '../state/useRace';
 
 interface Props {
@@ -119,6 +119,9 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
           upcoming={upcoming}
           runners={runners}
           now={now}
+          alreadyRan={legs.some(
+            (l) => l.runnerId === meId && l.deletedAt === null && l.endedAt !== null,
+          )}
         />
       )}
 
@@ -136,7 +139,9 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
             <>
               <div className="eyebrow mb-1.5">Départ dans</div>
               <div className="mono text-[34px] leading-none">{fmtShort(-nowMin * 60)}</div>
-              <div className="mt-1.5 text-[11px] text-muted">{fmtClock(team.raceStart)}</div>
+              <div className="mt-1.5 text-[11px] text-muted">
+                {fmtClockDay(team.raceStart, now)}
+              </div>
             </>
           ) : (
             <>
@@ -389,12 +394,14 @@ function MyTurn({
   upcoming,
   runners,
   now,
+  alreadyRan,
 }: {
   meId: string;
   open: ReturnType<typeof openLegOf>;
   upcoming: ReturnType<typeof computeSchedule>;
   runners: Runner[];
   now: number;
+  alreadyRan: boolean;
 }) {
   const me = runners.find((r) => r.id === meId);
   if (!me) return null;
@@ -415,11 +422,12 @@ function MyTurn({
       ) : next ? (
         <>
           <div className="mt-0.5 text-lg font-semibold">
-            Tu repars dans{' '}
+            {alreadyRan ? 'Tu repars dans' : 'Tu pars dans'}{' '}
             <span className="mono">{fmtShort(Math.max(0, next.startedAt - now) / 1000)}</span>
           </div>
           <div className="mt-0.5 text-[11px] text-muted">
-            vers <span className="mono">{fmtClock(next.startedAt)}</span> · {next.loops} boucles
+            vers <span className="mono">{fmtClockDay(next.startedAt, now)}</span> ·{' '}
+            {next.loops} boucles
           </div>
         </>
       ) : (
