@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    background: theme('colors.bg');
+  }
+
+  body {
+    margin: 0;
+    color: theme('colors.ink');
+    font-family: theme('fontFamily.sans');
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  /* Un chrono qui change de largeur a chaque seconde est illisible. */
+  .mono {
+    font-family: theme('fontFamily.mono');
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  .disp {
+    font-family: theme('fontFamily.disp');
+    letter-spacing: 0.02em;
+  }
+
+  :focus-visible {
+    outline: 3px solid theme('colors.ink');
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface p-4;
+  }
+
+  .eyebrow {
+    @apply text-[10px] uppercase tracking-[0.16em] text-muted;
+  }
+
+  .stat-k {
+    @apply text-[10px] uppercase tracking-[0.1em] text-muted;
+  }
+
+  .ghost {
+    @apply w-full rounded-xl border border-line bg-transparent px-3 py-3 text-sm text-muted
+           active:bg-raised;
+  }
+
+  .chip {
+    @apply rounded-lg border border-line bg-raised px-3 py-2 text-xs text-muted active:bg-line;
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-line bg-raised px-3 py-2 text-sm text-ink;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

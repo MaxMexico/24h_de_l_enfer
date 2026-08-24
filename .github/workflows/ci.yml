@@ -1,0 +1,36 @@
+name: Tests
+
+# Valide chaque PR et chaque push. Volontairement sans secrets : le build
+# doit passer même sur un fork, et surtout avant que les secrets du dépôt
+# aient été créés. La vérification que les variables sont bien injectées
+# appartient au workflow de déploiement.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+        env:
+          # Les scripts navigateur ne tournent pas en CI.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: Typage
+        run: npm run typecheck
+
+      - name: Moteur de planning et mutations optimistes
+        run: npm test
+
+      - name: Build
+        run: npm run build
