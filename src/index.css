@@ -73,6 +73,32 @@
   }
 }
 
+/* Le dragon respire, et sa flamme vacille. Rien de plus : une animation
+   permanente sur un ecran allume 24 h, c'est de la batterie. */
+@keyframes dragon-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.015); }
+}
+
+/* Uniquement l'opacite : la flamme est deja placee par un attribut
+   `transform` SVG, qu'une animation CSS de transform ecraserait. */
+@keyframes dragon-flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.68; }
+}
+
+.dragon {
+  transform-origin: 50% 85%;
+}
+
+.dragon-awake {
+  animation: dragon-breathe 3.4s ease-in-out infinite;
+}
+
+.dragon-flame {
+  animation: dragon-flicker 1.1s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

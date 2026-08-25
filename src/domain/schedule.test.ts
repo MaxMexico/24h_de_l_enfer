@@ -8,6 +8,7 @@ import {
   teamKm,
 } from './schedule';
 import type { Leg, Runner, Team } from './types';
+import { fmtClockDay, fmtShort } from '../lib/time';
 
 const START = Date.UTC(2026, 7, 29, 8, 0, 0); // 29/08/2026 10:00 Paris
 const MIN = 60_000;
@@ -301,5 +302,26 @@ describe('cible de boucles par relais', () => {
     const s = computeSchedule({ team: TEAM, runners: RUNNERS, legs, now: START + MIN });
     // 6 boucles à 6:00/km au lieu de 3 : le relais suivant est repoussé.
     expect(s[1]!.startMin).toBeCloseTo((6 * 1.41 * 360) / 60, 5);
+  });
+});
+
+describe('affichage des durées', () => {
+  it('bascule en jours au-delà de deux jours', () => {
+    // Le cas réel : lundi soir, départ samedi 10:00.
+    expect(fmtShort(109 * 3600 + 2 * 60)).toBe('4j 13h');
+    expect(fmtShort(48 * 3600)).toBe('2j 0h');
+  });
+
+  it('garde les heures en dessous de deux jours', () => {
+    expect(fmtShort(47 * 3600 + 59 * 60)).toBe('47h59');
+    expect(fmtShort(3 * 3600 + 5 * 60)).toBe('3h05');
+    expect(fmtShort(42 * 60)).toBe('42 min');
+  });
+
+  it('préfixe le jour quand ce n est pas aujourd hui', () => {
+    const lundi = Date.UTC(2026, 7, 24, 18, 57);
+    const samedi = Date.UTC(2026, 7, 29, 8, 0);
+    expect(fmtClockDay(samedi, lundi)).toMatch(/^sam\.? /);
+    expect(fmtClockDay(lundi + 60_000, lundi)).not.toMatch(/^[a-z]{3}/);
   });
 });

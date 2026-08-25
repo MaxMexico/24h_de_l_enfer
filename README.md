@@ -25,13 +25,37 @@ groupe. Voir « Changer le code d'accès » plus bas.
 
 ---
 
-## Les trois écrans
+## Les quatre écrans
 
 | Écran        | À quoi il sert |
 |--------------|----------------|
-| **Course**   | Bouton Relais plein écran, **« tu repars dans… »** pour celui qui tient le téléphone, coureur en piste, chrono, **compteur de boucles**, coureur suivant, annulation du dernier relais, total équipe. À l’arrivée, le bilan de la course. |
+| **Course**   | Bouton Relais plein écran, **« tu repars dans… »** pour celui qui tient le téléphone, coureur en piste, chrono, **compteur de boucles**, coureur suivant, annulation du dernier relais, **consignes du coach**, total équipe. À l’arrivée, le bilan de la course. |
 | **Rotation** | Timeline complète par phase — passés, en cours, à venir. Correction des boucles et **du coureur** sur un relais passé, cible du relais en cours, suppression, ajout d'un relais oublié. |
-| **Équipe**   | Par coureur : km, relais, allure moyenne, projection, **heure de reprise**. Onglet Réglages : coureurs, ordre, ajout d’un coureur, identité du téléphone, départ, boucle, allure de référence, verrou d’écran, phases (replié), mode test. |
+| **Dragon**   | Jauge de progression déguisée : le dragon d’équipe évolue en sept stades avec les kilomètres parcourus, et on voit qui le nourrit. |
+| **Équipe**   | Par coureur : km, relais, allure moyenne, projection, **heure de reprise**. Onglet Réglages : coureurs, ordre, ajout d’un coureur, identité du téléphone, **notifications du coach**, départ, boucle, allure de référence, verrou d’écran, phases (replié), mode test. |
+
+### Le coach
+
+Des consignes datées, personnelles, calées sur **tes** relais : repas 2 h 30 avant
+le départ, stop au solide à −60 min, hydratation à −45, préparation à −30,
+échauffement à −15, zone de relais à −5 ; puis récupération, repas et sieste après
+l’arrivée, et un rappel de boisson par heure creuse. Les textes changent la nuit —
+un « vrai repas » à 3 h du matin, ça n’existe pas. **Pendant que tu cours, le coach
+se tait.**
+
+Les notifications sont **facultatives et locales** : elles partent de l’appli, pas
+d’un serveur. Elles n’arrivent donc que si l’appli tourne encore, au premier plan ou
+en arrière-plan récent. Téléphone verrouillé depuis une heure, il n’y aura rien.
+C’est un rappel, pas un réveil — et c’est écrit tel quel dans les réglages.
+
+### Le dragon
+
+Sept stades, de l’œuf à l’Ancestral, dessinés en SVG dans le dépôt : aucune image à
+charger. Les seuils sont des fractions d’une distance de référence dérivée de la
+durée de course et de l’allure de l’équipe (70 % de la distance en course continue,
+soit 168 km avec les réglages par défaut) — ils suivent donc vos réglages au lieu
+d’être des chiffres en dur. Il prend la couleur de celui qui est en piste, et ferme
+les yeux quand personne ne court.
 
 ### Rotation par défaut
 
@@ -404,11 +428,14 @@ conserve. Le seul remède est d'en changer, ce qui prend une requête.
 
 ```
 src/
-  domain/      logique pure : phases, allures, projection, totaux (+ tests)
+  domain/      logique pure : phases, allures, projection, totaux,
+               consignes du coach, stades du dragon (+ tests)
   state/       useRace : lecture, écriture optimiste, file de relance, temps réel
+               useCoachNotifications : notifications locales, dédoublonnées
   lib/         client Supabase, types générés, formatage des durées
-  components/  anneau des 24 h, indicateur d'état, bandeau de relance
-  screens/     Course, Rotation, Équipe
+  components/  anneau des 24 h, indicateur d'état, bandeau de relance,
+               carte du coach, dragon
+  screens/     Course, Rotation, Dragon, Équipe
 supabase/migrations/   schéma, RLS, fonctions, seed
 scripts/               tests d'acceptation SQL et navigateur
 ```

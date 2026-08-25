@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CoachCard } from '../components/CoachCard';
 import { RaceRing } from '../components/RaceRing';
 import { NextRelayPanel } from '../components/NextRelayPanel';
 import { RaceSummary } from '../components/RaceSummary';
@@ -10,8 +11,9 @@ import {
   plannedLoops,
   teamKm,
 } from '../domain/schedule';
+import type { Cue } from '../domain/coach';
 import type { Runner } from '../domain/types';
-import { fmtClock, fmtDur, fmtKm, fmtShort } from '../lib/time';
+import { fmtClock, fmtClockDay, fmtDur, fmtKm, fmtShort } from '../lib/time';
 import { incomingRunner, openLegOf, type UseRace } from '../state/useRace';
 
 interface Props {
@@ -20,6 +22,8 @@ interface Props {
   /** Coureur qui tient ce telephone. Null tant qu'il ne s'est pas designe. */
   meId: string | null;
   setMeId: (id: string) => void;
+  /** Consignes du coach pour ce coureur. Vide s'il ne s'est pas designe. */
+  cues: Cue[];
 }
 
 /**
@@ -28,7 +32,7 @@ interface Props {
  */
 const RELAY_GUARD_MS = 15_000;
 
-export function CourseScreen({ race, now, meId, setMeId }: Props) {
+export function CourseScreen({ race, now, meId, setMeId, cues }: Props) {
   const data = race.data!;
   const { team, runners, legs } = data;
 
@@ -100,6 +104,8 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
     navigator.vibrate?.([20, 60, 20]);
   };
 
+  const me = meId === null ? undefined : runners.find((r) => r.id === meId);
+
   const km = teamKm(legs, team.loopKm);
   const projectedKm = useMemo(
     () => km + upcoming.reduce((a, e) => a + e.loops * team.loopKm, 0),
@@ -119,6 +125,9 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
           upcoming={upcoming}
           runners={runners}
           now={now}
+          alreadyRan={legs.some(
+            (l) => l.runnerId === meId && l.deletedAt === null && l.endedAt !== null,
+          )}
         />
       )}
 
@@ -136,7 +145,9 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
             <>
               <div className="eyebrow mb-1.5">Départ dans</div>
               <div className="mono text-[34px] leading-none">{fmtShort(-nowMin * 60)}</div>
-              <div className="mt-1.5 text-[11px] text-muted">{fmtClock(team.raceStart)}</div>
+              <div className="mt-1.5 text-[11px] text-muted">
+                {fmtClockDay(team.raceStart, now)}
+              </div>
             </>
           ) : (
             <>
@@ -238,6 +249,10 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
           </button>
         )}
       </div>
+
+      {me !== undefined && !over && (
+        <CoachCard cues={cues} now={now} name={me.name} color={me.color} />
+      )}
 
       {finished && started ? (
         <RaceSummary data={data} schedule={schedule} now={now} />
@@ -389,12 +404,14 @@ function MyTurn({
   upcoming,
   runners,
   now,
+  alreadyRan,
 }: {
   meId: string;
   open: ReturnType<typeof openLegOf>;
   upcoming: ReturnType<typeof computeSchedule>;
   runners: Runner[];
   now: number;
+  alreadyRan: boolean;
 }) {
   const me = runners.find((r) => r.id === meId);
   if (!me) return null;
@@ -415,11 +432,12 @@ function MyTurn({
       ) : next ? (
         <>
           <div className="mt-0.5 text-lg font-semibold">
-            Tu repars dans{' '}
+            {alreadyRan ? 'Tu repars dans' : 'Tu pars dans'}{' '}
             <span className="mono">{fmtShort(Math.max(0, next.startedAt - now) / 1000)}</span>
           </div>
           <div className="mt-0.5 text-[11px] text-muted">
-            vers <span className="mono">{fmtClock(next.startedAt)}</span> · {next.loops} boucles
+            vers <span className="mono">{fmtClockDay(next.startedAt, now)}</span> ·{' '}
+            {next.loops} boucles
           </div>
         </>
       ) : (
