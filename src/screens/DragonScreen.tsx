@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Dragon } from '../components/Dragon';
-import { dragonStateOf, referenceKm, STAGES } from '../domain/dragon';
+import { dragonStateOf, FINAL_KM, STAGES } from '../domain/dragon';
 import { activeRunners, liveLegs, teamKm } from '../domain/schedule';
 import { fmtKm } from '../lib/time';
 import { openLegOf, type UseRace } from '../state/useRace';
@@ -20,7 +20,7 @@ export function DragonScreen({ race }: Props) {
 
   const km = teamKm(legs, team.loopKm);
   const open = openLegOf(legs);
-  const dragon = dragonStateOf(km, team.raceMinutes, team.refPaceSec, open !== null);
+  const dragon = dragonStateOf(km, open !== null);
 
   const current = open ? runners.find((r) => r.id === open.runnerId) : undefined;
   // Le dragon prend la couleur de celui qui est en piste : on voit d'un
@@ -40,7 +40,6 @@ export function DragonScreen({ race }: Props) {
   }, [legs, runners, team.loopKm]);
 
   const maxKm = Math.max(1, ...feeders.map((f) => f.km));
-  const ref = referenceKm(team.raceMinutes, team.refPaceSec);
 
   return (
     <div className="px-4 pb-6 pt-3">
@@ -129,15 +128,15 @@ export function DragonScreen({ race }: Props) {
                 <span className="mono w-4 flex-none text-[11px] text-muted">{s.index + 1}</span>
                 <span className="flex-1 text-[13px]">{s.name}</span>
                 <span className="mono flex-none text-[11px] text-muted">
-                  {fmtKm(s.from * ref)} km
+                  {s.km} km
                 </span>
               </li>
             );
           })}
         </ol>
         <p className="mt-2 text-[11px] leading-relaxed text-dim">
-          Les seuils sont calculés sur la durée de course et l’allure de référence de l’équipe :
-          ils suivent vos réglages.
+          {FINAL_KM} km d’équipe pour le dernier stade. À quatre en relais continu, ça se
+          joue dans les dernières heures.
         </p>
       </section>
     </div>

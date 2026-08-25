@@ -51,11 +51,18 @@ C’est un rappel, pas un réveil — et c’est écrit tel quel dans les régla
 ### Le dragon
 
 Sept stades, de l’œuf à l’Ancestral, dessinés en SVG dans le dépôt : aucune image à
-charger. Les seuils sont des fractions d’une distance de référence dérivée de la
-durée de course et de l’allure de l’équipe (70 % de la distance en course continue,
-soit 168 km avec les réglages par défaut) — ils suivent donc vos réglages au lieu
-d’être des chiffres en dur. Il prend la couleur de celui qui est en piste, et ferme
-les yeux quand personne ne court.
+charger. Les seuils sont des **kilomètres d’équipe**, en dur et volontairement ronds
+— on en parle entre nous, et ils ne bougent pas si quelqu’un ajuste l’allure de
+référence à 3 h du matin.
+
+| Stade | Œuf | Éclosion | Braise | Vif | Ailé | Souffle de feu | Ancestral |
+|---|---|---|---|---|---|---|---|
+| km | 0 | 10 | 30 | 60 | 100 | 150 | **200** |
+
+À 10 km/h d’équipe en relais continu, l’éclosion tombe vers 1 h de course, les ailes
+vers 10 h, et **l’Ancestral se joue dans les dernières heures** — atteignable
+seulement si le rythme tient toute la nuit. Il prend la couleur de celui qui est en
+piste, et ferme les yeux quand personne ne court.
 
 ### Rotation par défaut
 
