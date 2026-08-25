@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CoachCard } from '../components/CoachCard';
 import { RaceRing } from '../components/RaceRing';
 import { NextRelayPanel } from '../components/NextRelayPanel';
 import { RaceSummary } from '../components/RaceSummary';
@@ -10,6 +11,7 @@ import {
   plannedLoops,
   teamKm,
 } from '../domain/schedule';
+import type { Cue } from '../domain/coach';
 import type { Runner } from '../domain/types';
 import { fmtClock, fmtClockDay, fmtDur, fmtKm, fmtShort } from '../lib/time';
 import { incomingRunner, openLegOf, type UseRace } from '../state/useRace';
@@ -20,6 +22,8 @@ interface Props {
   /** Coureur qui tient ce telephone. Null tant qu'il ne s'est pas designe. */
   meId: string | null;
   setMeId: (id: string) => void;
+  /** Consignes du coach pour ce coureur. Vide s'il ne s'est pas designe. */
+  cues: Cue[];
 }
 
 /**
@@ -28,7 +32,7 @@ interface Props {
  */
 const RELAY_GUARD_MS = 15_000;
 
-export function CourseScreen({ race, now, meId, setMeId }: Props) {
+export function CourseScreen({ race, now, meId, setMeId, cues }: Props) {
   const data = race.data!;
   const { team, runners, legs } = data;
 
@@ -99,6 +103,8 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
     race.undo(now);
     navigator.vibrate?.([20, 60, 20]);
   };
+
+  const me = meId === null ? undefined : runners.find((r) => r.id === meId);
 
   const km = teamKm(legs, team.loopKm);
   const projectedKm = useMemo(
@@ -243,6 +249,10 @@ export function CourseScreen({ race, now, meId, setMeId }: Props) {
           </button>
         )}
       </div>
+
+      {me !== undefined && !over && (
+        <CoachCard cues={cues} now={now} name={me.name} color={me.color} />
+      )}
 
       {finished && started ? (
         <RaceSummary data={data} schedule={schedule} now={now} />

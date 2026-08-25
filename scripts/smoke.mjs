@@ -83,6 +83,14 @@ await page.route('**/rest/v1/**', async (route) => {
 });
 await page.route('**/realtime/**', (route) => route.abort());
 
+// Ce telephone est celui de Brunet : sans ca, ni le bandeau personnel ni
+// les consignes du coach n'ont de destinataire. On prend quelqu'un qui
+// n'est pas en piste, sinon le coach se tait — c'est voulu.
+await page.addInitScript(
+  ([teamId, meId]) => window.localStorage.setItem(`fdb24:me:${teamId}`, meId),
+  [TEAM_ID, R.b],
+);
+
 await page.goto(`${BASE}#/t/${CODE}`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(900);
 
@@ -98,6 +106,10 @@ console.log('En piste :', await page.locator('.disp').last().textContent());
 await page.getByRole('button', { name: 'Rotation' }).click();
 await page.waitForTimeout(400);
 await shot('2-rotation');
+
+await page.getByRole('button', { name: 'Dragon' }).click();
+await page.waitForTimeout(600);
+await shot('9-dragon');
 
 await page.getByRole('button', { name: 'Équipe' }).click();
 await page.waitForTimeout(400);

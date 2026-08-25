@@ -3,6 +3,7 @@ import { ReorderList } from '../components/ReorderList';
 import { activeRunners, computeSchedule, computeTotals } from '../domain/schedule';
 import type { Phase, Runner } from '../domain/types';
 import { fmtClock, fmtKm, fmtPace, fmtShort } from '../lib/time';
+import type { CoachNotifications } from '../state/useCoachNotifications';
 import type { UseRace } from '../state/useRace';
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
   skew: number;
   meId: string | null;
   setMeId: (id: string) => void;
+  coach: CoachNotifications;
 }
 
 /** Palette : plus rapide et plus lisible qu'un selecteur de couleur natif. */
@@ -109,7 +111,7 @@ export function EquipeScreen(props: Props) {
 
 function Settings({
   race, now, offset, setOffset, code,
-  wakeLockOn, setWakeLockOn, wakeLockHeld, skew, meId, setMeId,
+  wakeLockOn, setWakeLockOn, wakeLockHeld, skew, meId, setMeId, coach,
 }: Props) {
   const data = race.data!;
   const { team, runners } = data;
@@ -218,6 +220,8 @@ function Settings({
       <AddRunnerForm race={race} used={draft.map((r) => r.color)} />
 
       <IdentitySettings runners={roster} meId={meId} setMeId={setMeId} />
+
+      <CoachSettings coach={coach} named={meId !== null} />
 
       <RaceSettings race={race} />
 
@@ -385,6 +389,67 @@ function AddRunnerForm({ race, used }: { race: UseRace; used: string[] }) {
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Notifications du coach. Le libelle dit exactement ce qu'elles font et
+ * ce qu'elles ne font pas : promettre un reveil qui n'arrivera pas est
+ * pire que ne rien promettre du tout.
+ */
+function CoachSettings({ coach, named }: { coach: CoachNotifications; named: boolean }) {
+  return (
+    <section className="card">
+      <div className="eyebrow">Coach</div>
+      <p className="mt-1 text-[11px] leading-relaxed text-muted">
+        Rappels de boisson, de repas et de préparation, calés sur tes propres relais.
+        Ils s’affichent toujours en haut de l’écran Course ; la notification, elle, sort
+        de l’appli.
+      </p>
+
+      {!named && (
+        <p className="mt-2 text-[11px] text-[#F2A65A]">
+          Choisis d’abord qui tient ce téléphone, juste au-dessus.
+        </p>
+      )}
+
+      {coach.permission === 'unsupported' ? (
+        <p className="mt-2 text-[11px] text-dim">
+          Ce navigateur ne sait pas afficher de notification. Les consignes restent
+          visibles dans l’écran Course.
+        </p>
+      ) : coach.permission === 'denied' ? (
+        <p className="mt-2 text-[11px] text-[#E86A92]">
+          Notifications refusées pour ce site. Ça se réactive dans les réglages du
+          téléphone, pas ici.
+        </p>
+      ) : coach.enabled ? (
+        <>
+          <div className="mt-2.5 rounded-xl border border-line bg-raised px-3 py-2.5 text-[12px]">
+            Notifications actives sur ce téléphone.
+          </div>
+          <button type="button" className="ghost mt-2" onClick={coach.disable}>
+            Désactiver
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          disabled={!named}
+          onClick={coach.enable}
+          className="mt-2.5 w-full rounded-xl bg-ink px-4 py-3 text-sm font-semibold text-bg
+                     disabled:bg-raised disabled:text-dim"
+        >
+          Activer les notifications
+        </button>
+      )}
+
+      <p className="mt-2 text-[10px] leading-relaxed text-dim">
+        Elles partent de l’appli, pas d’un serveur : elles n’arrivent que si l’appli
+        tourne encore, au premier plan ou en arrière-plan récent. Téléphone verrouillé
+        depuis une heure, il n’y aura rien. C’est un rappel, pas un réveil.
+      </p>
+    </section>
   );
 }
 

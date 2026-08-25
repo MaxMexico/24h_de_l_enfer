@@ -1,20 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { RetryBanner } from './components/RetryBanner';
 import { SyncBadge } from './components/SyncBadge';
+import { coachCues } from './domain/coach';
+import { computeSchedule } from './domain/schedule';
 import { fmtClockSec } from './lib/time';
 import { CourseScreen } from './screens/CourseScreen';
+import { DragonScreen } from './screens/DragonScreen';
 import { EquipeScreen } from './screens/EquipeScreen';
 import { RotationScreen } from './screens/RotationScreen';
 import { useClock } from './state/useClock';
 import { useClockSkew } from './state/useClockSkew';
+import { useCoachNotifications } from './state/useCoachNotifications';
 import { useRace } from './state/useRace';
 import { useWakeLock } from './state/useWakeLock';
 
 const LAST_CODE = 'fdb24:last-code';
 const OFFSET_KEY = 'fdb24:clock-offset';
 const WAKE_KEY = 'fdb24:wake-lock';
+const COACH_KEY = 'fdb24:coach-notif';
 const ME_PREFIX = 'fdb24:me:';
+
+/**
+ * Les consignes du coach se comptent en minutes : les recalculer soixante
+ * fois par minute serait du travail jete. On les recale toutes les 30 s.
+ */
+const COACH_TICK_MS = 30_000;
 
 const readStored = (key: string): string | null => {
   try {
@@ -107,7 +118,7 @@ function Board() {
   // telephones qui ne sont pas d'accord sur l'heure faussent les allures.
   const skew = useClockSkew();
   const now = useClock(offset + skew);
-  const [tab, setTab] = useState<'course' | 'rotation' | 'equipe'>('course');
+  const [tab, setTab] = useState<'course' | 'rotation' | 'dragon' | 'equipe'>('course');
 
   // Le verrou d'ecran est un choix, pas un defaut : sur le telephone de
   // quelqu'un qui dort sous la tente, c'est de la batterie brulee pour rien.
@@ -133,6 +144,37 @@ function Board() {
   useEffect(() => {
     if (race.status === 'ready') writeStored(LAST_CODE, code);
   }, [race.status, code]);
+
+  /* --------------------------------- coach -------------------------------- */
+
+  const [coachOn, setCoachOnState] = useState(() => readStored(COACH_KEY) === '1');
+  const setCoachOn = (on: boolean) => {
+    setCoachOnState(on);
+    writeStored(COACH_KEY, on ? '1' : '0');
+  };
+
+  const coarse = Math.floor(now / COACH_TICK_MS) * COACH_TICK_MS;
+  const data = race.data;
+
+  const cues = useMemo(() => {
+    if (!data || meId === null) return [];
+    const schedule = computeSchedule({ ...data, now: coarse });
+    return coachCues({
+      runnerId: meId,
+      legs: data.legs,
+      schedule,
+      now: coarse,
+      raceEnd: data.team.raceStart + data.team.raceMinutes * 60_000,
+    });
+  }, [data, meId, coarse]);
+
+  const coach = useCoachNotifications(
+    cues,
+    now,
+    `${teamId ?? 'x'}:${meId ?? 'x'}`,
+    coachOn,
+    setCoachOn,
+  );
 
   if (race.status === 'loading') {
     return <Splash message="Chargement…" />;
@@ -172,9 +214,10 @@ function Board() {
 
       <main>
         {tab === 'course' && (
-          <CourseScreen race={race} now={now} meId={meId} setMeId={setMeId} />
+          <CourseScreen race={race} now={now} meId={meId} setMeId={setMeId} cues={cues} />
         )}
         {tab === 'rotation' && <RotationScreen race={race} now={now} />}
+        {tab === 'dragon' && <DragonScreen race={race} />}
         {tab === 'equipe' && (
           <EquipeScreen
             race={race}
@@ -188,15 +231,17 @@ function Board() {
             skew={skew}
             meId={meId}
             setMeId={setMeId}
+            coach={coach}
           />
         )}
       </main>
 
-      <nav className="fixed bottom-0 left-1/2 grid w-full max-w-[560px] -translate-x-1/2 grid-cols-3
+      <nav className="fixed bottom-0 left-1/2 grid w-full max-w-[560px] -translate-x-1/2 grid-cols-4
                       border-t border-line bg-bg/95 backdrop-blur">
         {([
           ['course', 'Course'],
           ['rotation', 'Rotation'],
+          ['dragon', 'Dragon'],
           ['equipe', 'Équipe'],
         ] as const).map(([key, label]) => (
           <button
@@ -204,7 +249,7 @@ function Board() {
             type="button"
             onClick={() => setTab(key)}
             aria-current={tab === key ? 'page' : undefined}
-            className={`disp -mt-px border-t-2 px-0 pb-5 pt-4 text-xs uppercase tracking-[0.14em] ${
+            className={`disp -mt-px border-t-2 px-0 pb-5 pt-4 text-[11px] uppercase tracking-[0.1em] ${
               tab === key ? 'border-ink text-ink' : 'border-transparent text-dim'
             }`}
           >
