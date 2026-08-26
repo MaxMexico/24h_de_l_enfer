@@ -3,8 +3,6 @@ import { mkdirSync } from 'node:fs';
 
 const SHOTS = new URL('../screenshots/', import.meta.url).pathname;
 const BASE = 'http://127.0.0.1:4173/24h_de_l_enfer/';
-// Supabase est bouchonne : n'importe quel code fait l'affaire.
-const CODE = process.env.TEAM_CODE ?? 'code-de-test';
 const START = new Date(Date.now() - 3 * 3600_000);
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const R = ['22222222-2222-4222-8222-222222222221', '22222222-2222-4222-8222-222222222222',
@@ -77,7 +75,7 @@ await page.route('**/realtime/**', (route) => route.abort());
 const enPiste = () => page.locator('main .disp').first().textContent();
 const badge = async () => (await page.locator('header .mono').last().textContent())?.trim();
 
-await page.goto(`${BASE}#/t/${CODE}`, { waitUntil: 'networkidle' });
+await page.goto(`${BASE}#/`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(700);
 
 // --- 1. Identite du telephone ---

@@ -11,17 +11,21 @@ export type Client = SupabaseClient<Database>;
 const cache = new Map<string, Client>();
 
 /**
- * Un client par code d'equipe : le code voyage dans l'en-tete `x-team-code`,
- * que les policies RLS resolvent en team_id. Il n'y a pas d'authentification
- * utilisateur — personne ne se logue a 4 h du matin.
+ * Client Supabase. Il n'y a pas d'authentification utilisateur — personne
+ * ne se logue a 4 h du matin — et plus de code d'equipe : le lien nu ouvre
+ * la course.
+ *
+ * L'en-tete `x-team-code` n'est envoye que si un code est present dans
+ * l'URL, pour les liens deja installes sur les ecrans d'accueil. Cote base,
+ * les deux chemins resolvent la meme equipe.
  */
-export const clientFor = (code: string): Client => {
+export const clientFor = (code = ''): Client => {
   const hit = cache.get(code);
   if (hit) return hit;
 
   const client = createClient<Database>(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { 'x-team-code': code } },
+    global: { headers: code ? { 'x-team-code': code } : {} },
     realtime: { params: { eventsPerSecond: 5 } },
   });
   cache.set(code, client);

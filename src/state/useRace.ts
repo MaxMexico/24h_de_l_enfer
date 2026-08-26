@@ -129,7 +129,7 @@ export const useRace = (code: string): UseRace => {
         if (cancelled) return;
         if (!fresh) {
           setStatus('error');
-          setError(`Aucune equipe pour le code « ${code} ».`);
+          setError('Aucune course trouvée sur ce serveur.');
           return;
         }
         setServer(fresh);

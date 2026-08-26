@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { RetryBanner } from './components/RetryBanner';
 import { SyncBadge } from './components/SyncBadge';
 import { coachCues } from './domain/coach';
@@ -15,7 +15,6 @@ import { useCoachNotifications } from './state/useCoachNotifications';
 import { useRace } from './state/useRace';
 import { useWakeLock } from './state/useWakeLock';
 
-const LAST_CODE = 'fdb24:last-code';
 const OFFSET_KEY = 'fdb24:clock-offset';
 const WAKE_KEY = 'fdb24:wake-lock';
 const COACH_KEY = 'fdb24:coach-notif';
@@ -46,61 +45,13 @@ const writeStored = (key: string, value: string): void => {
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<Board />} />
+      {/* Les liens qui portent encore un code restent valables : ils sont
+          deja sur des ecrans d'accueil, et cote base ils resolvent la meme
+          equipe que le lien nu. */}
       <Route path="/t/:code" element={<Board />} />
-      <Route path="/" element={<Landing />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-  );
-}
-
-/** Saisie du code d'equipe, avec reprise automatique du dernier utilise. */
-function Landing() {
-  const navigate = useNavigate();
-  const [code, setCode] = useState(() => readStored(LAST_CODE) ?? '');
-
-  useEffect(() => {
-    const last = readStored(LAST_CODE);
-    if (last) navigate(`/t/${last}`, { replace: true });
-  }, [navigate]);
-
-  return (
-    <main className="mx-auto flex min-h-screen max-w-[560px] flex-col justify-center px-6">
-      <h1 className="disp text-xl font-semibold uppercase tracking-[0.13em]">Les Fous du Bus</h1>
-      <p className="mt-1 text-[11px] uppercase tracking-[0.08em] text-muted">
-        24 h · Villenave d’Ornon
-      </p>
-
-      <form
-        className="mt-8"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const clean = code.trim();
-          if (clean) navigate(`/t/${encodeURIComponent(clean)}`);
-        }}
-      >
-        <label className="stat-k block" htmlFor="code">Code d’équipe</label>
-        <input
-          id="code"
-          className="field mono mt-1.5"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          autoComplete="off"
-          autoCapitalize="none"
-          spellCheck={false}
-          placeholder="code partagé dans le groupe"
-        />
-        <button
-          type="submit"
-          className="mt-3 w-full rounded-xl bg-ink px-4 py-3.5 text-sm font-semibold text-bg"
-        >
-          Ouvrir le tableau de bord
-        </button>
-      </form>
-
-      <p className="mt-6 text-[11px] leading-relaxed text-dim">
-        Le code se partage dans l’URL : chacun ouvre le même lien et voit la même course.
-      </p>
-    </main>
   );
 }
 
@@ -140,10 +91,6 @@ function Board() {
     setMeIdState(id);
     if (teamId) writeStored(ME_PREFIX + teamId, id);
   };
-
-  useEffect(() => {
-    if (race.status === 'ready') writeStored(LAST_CODE, code);
-  }, [race.status, code]);
 
   /* --------------------------------- coach -------------------------------- */
 
@@ -186,9 +133,6 @@ function Board() {
         <button type="button" className="ghost mt-4" onClick={race.refresh}>
           Réessayer
         </button>
-        <a href="#/" className="mt-2 block text-center text-[13px] text-muted underline">
-          Changer de code
-        </a>
       </Splash>
     );
   }
@@ -224,7 +168,6 @@ function Board() {
             now={now}
             offset={offset}
             setOffset={setOffset}
-            code={code}
             wakeLockOn={wakeLockOn}
             setWakeLockOn={setWakeLockOn}
             wakeLockHeld={wakeLockHeld}
