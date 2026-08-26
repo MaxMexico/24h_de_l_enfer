@@ -11,7 +11,6 @@ interface Props {
   now: number;
   offset: number;
   setOffset: (ms: number) => void;
-  code: string;
   wakeLockOn: boolean;
   setWakeLockOn: (on: boolean) => void;
   wakeLockHeld: boolean;
@@ -110,7 +109,7 @@ export function EquipeScreen(props: Props) {
 /* -------------------------------- reglages -------------------------------- */
 
 function Settings({
-  race, now, offset, setOffset, code,
+  race, now, offset, setOffset,
   wakeLockOn, setWakeLockOn, wakeLockHeld, skew, meId, setMeId, coach,
 }: Props) {
   const data = race.data!;
@@ -260,7 +259,6 @@ function Settings({
         <div className="eyebrow">Session</div>
         <dl className="mt-2 space-y-1.5 text-[12px]">
           <Row k="Équipe" v={team.name} />
-          <Row k="Code d’accès" v={code} mono />
           <Row k="Boucle" v={`${team.loopKm} km`} mono />
           <Row k="Temps réel" v={race.live ? 'connecté' : 'reconnexion…'} />
           <Row

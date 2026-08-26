@@ -12,16 +12,21 @@ L'app répond à quatre questions, sur un téléphone, la nuit, par des gens
 ## Lien de course
 
 ```
-https://<utilisateur>.github.io/24h_de_l_enfer/#/t/<code-equipe>
+https://<utilisateur>.github.io/24h_de_l_enfer/
 ```
 
-Le code d'équipe est dans l'URL. Les 4 coureurs ouvrent le même lien, et les
-4 téléphones peuvent enregistrer un relais. Le lien est mémorisé : à la
-réouverture, l'app repart directement sur la course.
+Le lien nu ouvre la course. Les 4 coureurs ouvrent la même adresse, et les
+4 téléphones peuvent enregistrer un relais.
 
-**Ce code est la clé d'écriture de l'équipe.** Il n'est volontairement écrit
-nulle part dans ce dépôt — qui est public — et se partage uniquement dans le
-groupe. Voir « Changer le code d'accès » plus bas.
+**Il n'y a plus de code d'accès.** Il existait, et il a été retiré : sur
+iPhone, un lien partagé perd régulièrement son fragment `#/t/<code>`, et il
+fallait alors ressaisir un code que personne n'a sur soi à 4 h du matin en zone
+de relais. Le compromis est assumé — qui connaît l'URL peut lire **et écrire**
+la course. Pour quatre amis sur un week-end, le risque réel est nul ; ce ne
+serait pas un choix défendable pour autre chose.
+
+Les liens qui portent encore un code (`#/t/<code>`) restent valables : ceux
+déjà installés sur un écran d'accueil continuent d'ouvrir la même course.
 
 ---
 
@@ -126,7 +131,7 @@ cp .env.example .env      # renseigner les deux variables
 npm run dev
 ```
 
-Puis ouvrir `http://localhost:5173/24h_de_l_enfer/#/t/<code-equipe>`.
+Puis ouvrir `http://localhost:5173/24h_de_l_enfer/`.
 
 ```bash
 npm test          # moteur de planning + file d'envoi (42 tests)
@@ -220,15 +225,20 @@ simultanés sans jamais afficher d'erreur :
 
 ### RLS
 
-Pas d'authentification utilisateur : personne ne se logue à 4 h du matin.
-L'accès est porté par l'`access_code` de l'équipe, transmis dans l'en-tête HTTP
-`x-team-code`, qu'une fonction Postgres résout en `team_id`. Les policies
-contraignent chaque ligne à ce `team_id`.
+Pas d'authentification utilisateur : personne ne se logue à 4 h du matin, et
+depuis le retrait du code d'accès, il n'y a plus rien à présenter du tout.
+
+`app.current_team_id()` résout l'équipe : par `access_code` si l'en-tête
+`x-team-code` en porte un — les liens déjà installés — et **sinon par repli sur
+l'unique équipe de la base**. Les policies, elles, n'ont pas bougé : elles
+contraignent toujours chaque ligne à ce `team_id`. Retirer le code aura donc
+coûté une fonction réécrite, pas une refonte des policies.
 
 - RLS activée sur les trois tables, `anon` n'a que les droits accordés
   explicitement (les droits par défaut de Supabase sont révoqués).
-- **`teams.access_code` n'est jamais lisible** : privilège de colonne refusé à
-  `anon`. Impossible de lire le code d'une autre équipe pour s'en servir.
+- **`teams.access_code` n'est jamais lisible ni modifiable** depuis le client :
+  privilège de colonne refusé à `anon`. La colonne survit au retrait du code,
+  au cas où l'on voudrait refermer l'accès un jour (tests `S4` et `S8`).
 - **Aucun `delete` n'est exposé.** Supprimer un relais est un `update` qui pose
   `deleted_at` — l'historique reste récupérable en base si besoin.
 - Les fonctions utilitaires vivent dans le schéma `app`, non exposé par
@@ -236,8 +246,7 @@ contraignent chaque ligne à ce `team_id`.
 
 `get_advisors --type security` ne remonte plus que deux avertissements, sur
 `record_relay` et `undo_last_leg` : ce sont les endpoints d'écriture, ils sont
-`security definer` **à dessein** et vérifient le code d'accès eux-mêmes
-(test `S6`).
+`security definer` **à dessein** et résolvent l'équipe eux-mêmes.
 
 #### Écarts assumés par rapport au brief
 
@@ -391,43 +400,40 @@ node scripts/smoke.mjs
 node scripts/resilience.mjs
 ```
 
-Ces scripts bouchonnent Supabase : ils n'ont pas besoin du vrai code
-d'équipe. `scripts/acceptance.sql`, lui, tape dans la vraie base — renseigner
-`v_code` en tête du fichier avant de le jouer, et ne pas commiter la
-substitution.
+Ces scripts bouchonnent Supabase : rien ne part sur le réseau.
+`scripts/acceptance.sql`, lui, tape dans la vraie base et écrit de vrais
+relais — il refuse de se lancer si la course en contient déjà, donc **pas
+pendant les 24 h**.
 
 Les captures atterrissent dans `screenshots/`.
 
 ---
 
-## Changer le code d'accès
+## Refermer l'accès, si un jour il le faut
 
-Le code n'est modifiable ni depuis l'app ni avec la clé `anon` — c'est
-volontaire. Depuis le SQL editor Supabase :
+Tout est resté en place pour ça : la colonne `access_code` existe toujours et
+reste illisible depuis le client. Il suffit de retirer le repli dans
+`app.current_team_id()` — la ligne `order by created_at, id limit 1` — pour que
+seul un lien portant le bon code rouvre la course.
 
 ```sql
-update public.teams
-set access_code = 'nouveau-code'
-where access_code = 'ancien-code';
+create or replace function app.current_team_id()
+returns uuid language sql stable security definer set search_path = '' as $$
+  select t.id from public.teams t where t.access_code = app.current_team_code();
+$$;
 ```
 
-Puis repartager le lien `#/t/nouveau-code`. Rien d'autre à changer : l'app lit
-le code depuis l'URL.
+Puis repartager le lien `#/t/<code>`. Et changer le code par la même occasion :
+celui-ci a été rendu inopérant en tant que secret le jour où l'accès a été
+ouvert.
 
-### Pourquoi il n'est pas dans le dépôt
+### La clé `anon`, elle, peut rester dans le dépôt
 
 Ce dépôt est public — c'est ce qu'impose GitHub Pages sur un compte Free. La
 clé `anon` de Supabase peut y être sans risque : elle finit de toute façon dans
 le bundle JS servi aux navigateurs, et la sécurité repose entièrement sur les
-policies RLS.
-
-L'`access_code`, lui, **est** la clé d'écriture de l'équipe. Il est donc traité
-comme un secret : absent des sources, absent du seed (qui sème un placeholder à
-remplacer aussitôt), et fourni aux scripts de test par variable
-d'environnement (`TEAM_CODE`) ou par substitution manuelle.
-
-Un code déjà passé par un dépôt public est brûlé : l'historique git le
-conserve. Le seul remède est d'en changer, ce qui prend une requête.
+policies RLS. La clé `service_role`, elle, ne doit apparaître ni dans le dépôt,
+ni dans les secrets Actions, ni dans le bundle.
 
 ---
 

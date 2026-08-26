@@ -3,8 +3,6 @@ import { mkdirSync } from 'node:fs';
 
 const SHOTS = new URL('../screenshots/', import.meta.url).pathname;
 const BASE = 'http://127.0.0.1:4173/24h_de_l_enfer/';
-// Supabase est bouchonne : n'importe quel code fait l'affaire.
-const CODE = process.env.TEAM_CODE ?? 'code-de-test';
 
 // Depart fictif : il y a 3 h pour une course en cours, 25 h avec
 // FINISHED=1 pour verifier le bilan de fin.
@@ -91,7 +89,7 @@ await page.addInitScript(
   [TEAM_ID, R.b],
 );
 
-await page.goto(`${BASE}#/t/${CODE}`, { waitUntil: 'networkidle' });
+await page.goto(`${BASE}#/`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(900);
 
 const shot = async (name) => {
@@ -118,6 +116,14 @@ await shot('3-equipe');
 await page.getByRole('button', { name: 'Réglages' }).click();
 await page.waitForTimeout(400);
 await shot('4-reglages');
+
+// Compatibilite : les liens deja poses sur un ecran d'accueil portent
+// encore leur code. Ils doivent ouvrir la course, pas un ecran de saisie.
+await page.goto(`${BASE}#/t/un-vieux-code`, { waitUntil: 'networkidle' });
+await page.waitForTimeout(700);
+const compat = await page.getByRole('button', { name: 'Rotation' }).isVisible();
+console.log('Lien avec ancien code :', compat ? 'ouvre la course' : '*** ECHEC ***');
+if (!compat) process.exitCode = 1;
 
 console.log('\nErreurs console :', errors.length ? errors : 'aucune');
 await browser.close();
